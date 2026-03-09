@@ -214,19 +214,26 @@ app.get('/api/conversation-trend', async (req, res) => {
 });
 
 // ─── 3. Team Performance ──────────────────────────────────
-// Fixed: tag_history only counts when source_teammate_id IS NOT NULL (excludes rule-applied tags)
-// Fixed: touched CTE also excludes null teammate_ids from tag history
+// Fixed: Scoped all CTEs to Sales Team inbox only
+// Fixed: first_reply inbound also date-filtered so AVG 1st Reply reflects the selected period
 app.get('/api/team-performance', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const sql = `
-      WITH assigned AS (
+      -- Sales Team inbox conversations (reusable filter for all CTEs)
+      WITH sales_convos AS (
+        SELECT DISTINCT ci_s.conversation_id
+        FROM \`${FRONT}.conversation_inbox\` ci_s
+        INNER JOIN \`${FRONT}.inbox\` ib_s ON ib_s.id = ci_s.inbox_id AND LOWER(ib_s.name) = 'sales team'
+      ),
+      assigned AS (
         SELECT
-          h.target_teammate_id AS teammate_id,
-          COUNT(DISTINCT h.conversation_id) AS assigned_convos
-        FROM \`${FRONT}.conversation_status_history\` h
-        WHERE h.status = 'assign'
-          AND h.updated_at >= TIMESTAMP(@start) AND h.updated_at <= TIMESTAMP(@end)
+          c.teammate_id AS teammate_id,
+          COUNT(DISTINCT c.id) AS assigned_convos
+        FROM \`${FRONT}.conversation\` c
+        INNER JOIN sales_convos sc ON sc.conversation_id = c.id
+        WHERE c.status IN ('assigned','unassigned')
+          AND c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
         GROUP BY 1
       ),
       msg_activity AS (
@@ -235,12 +242,13 @@ app.get('/api/team-performance', async (req, res) => {
           COUNT(DISTINCT m.conversation_id) AS touched_via_msg,
           COUNT(CASE WHEN m.is_inbound = false THEN 1 END) AS messages_sent
         FROM \`${FRONT}.message\` m
+        INNER JOIN sales_convos sc ON sc.conversation_id = m.conversation_id
         WHERE m.created_at >= TIMESTAMP(@start) AND m.created_at <= TIMESTAMP(@end)
           AND m.is_inbound = false
         GROUP BY 1
       ),
       touched AS (
-        SELECT teammate_id, COUNT(DISTINCT conversation_id) AS touched_convos
+        SELECT teammate_id, COUNT(DISTINCT sub.conversation_id) AS touched_convos
         FROM (
           SELECT author_id AS teammate_id, conversation_id
           FROM \`${FRONT}.message\`
@@ -256,6 +264,7 @@ app.get('/api/team-performance', async (req, res) => {
           WHERE updated_at >= TIMESTAMP(@start) AND updated_at <= TIMESTAMP(@end)
             AND source_teammate_id IS NOT NULL
         ) sub
+        INNER JOIN sales_convos sc ON sc.conversation_id = sub.conversation_id
         WHERE teammate_id IS NOT NULL
         GROUP BY 1
       ),
@@ -264,6 +273,7 @@ app.get('/api/team-performance', async (req, res) => {
           m_out.author_id AS teammate_id,
           COUNT(*) AS reply_count
         FROM \`${FRONT}.message\` m_out
+        INNER JOIN sales_convos sc ON sc.conversation_id = m_out.conversation_id
         WHERE m_out.is_inbound = false
           AND m_out.created_at >= TIMESTAMP(@start) AND m_out.created_at <= TIMESTAMP(@end)
           AND EXISTS (
@@ -279,13 +289,16 @@ app.get('/api/team-performance', async (req, res) => {
           m_out.author_id AS teammate_id,
           AVG(TIMESTAMP_DIFF(m_out.created_at, m_in_max.last_inbound, MINUTE)) AS avg_reply_min
         FROM \`${FRONT}.message\` m_out
+        INNER JOIN sales_convos sc ON sc.conversation_id = m_out.conversation_id
         JOIN (
           SELECT m_out2.id AS out_msg_id, MAX(m_in2.created_at) AS last_inbound
           FROM \`${FRONT}.message\` m_out2
+          INNER JOIN sales_convos sc2 ON sc2.conversation_id = m_out2.conversation_id
           JOIN \`${FRONT}.message\` m_in2
             ON m_in2.conversation_id = m_out2.conversation_id
             AND m_in2.is_inbound = true
             AND m_in2.created_at < m_out2.created_at
+            AND m_in2.created_at >= TIMESTAMP(@start)
           WHERE m_out2.is_inbound = false
             AND m_out2.created_at >= TIMESTAMP(@start) AND m_out2.created_at <= TIMESTAMP(@end)
           GROUP BY 1
@@ -305,10 +318,12 @@ app.get('/api/team-performance', async (req, res) => {
             AND created_at >= TIMESTAMP(@start) AND created_at <= TIMESTAMP(@end)
           GROUP BY conversation_id, author_id
         ) fo
+        INNER JOIN sales_convos sc ON sc.conversation_id = fo.conversation_id
         JOIN (
           SELECT conversation_id, MIN(created_at) AS first_in
           FROM \`${FRONT}.message\`
           WHERE is_inbound = true
+            AND created_at >= TIMESTAMP(@start) AND created_at <= TIMESTAMP(@end)
           GROUP BY conversation_id
         ) fi ON fi.conversation_id = fo.conversation_id
         WHERE fo.first_out > fi.first_in
