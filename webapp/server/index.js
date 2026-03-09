@@ -228,12 +228,12 @@ app.get('/api/team-performance', async (req, res) => {
       ),
       assigned AS (
         SELECT
-          h.target_teammate_id AS teammate_id,
-          COUNT(DISTINCT h.conversation_id) AS assigned_convos
-        FROM \`${FRONT}.conversation_status_history\` h
-        INNER JOIN sales_convos sc ON sc.conversation_id = h.conversation_id
-        WHERE h.status = 'assign'
-          AND h.updated_at >= TIMESTAMP(@start) AND h.updated_at <= TIMESTAMP(@end)
+          c.teammate_id AS teammate_id,
+          COUNT(DISTINCT c.id) AS assigned_convos
+        FROM \`${FRONT}.conversation\` c
+        INNER JOIN sales_convos sc ON sc.conversation_id = c.id
+        WHERE c.status IN ('assigned','unassigned')
+          AND c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
         GROUP BY 1
       ),
       msg_activity AS (
@@ -248,7 +248,7 @@ app.get('/api/team-performance', async (req, res) => {
         GROUP BY 1
       ),
       touched AS (
-        SELECT teammate_id, COUNT(DISTINCT conversation_id) AS touched_convos
+        SELECT teammate_id, COUNT(DISTINCT sub.conversation_id) AS touched_convos
         FROM (
           SELECT author_id AS teammate_id, conversation_id
           FROM \`${FRONT}.message\`
@@ -298,6 +298,7 @@ app.get('/api/team-performance', async (req, res) => {
             ON m_in2.conversation_id = m_out2.conversation_id
             AND m_in2.is_inbound = true
             AND m_in2.created_at < m_out2.created_at
+            AND m_in2.created_at >= TIMESTAMP(@start)
           WHERE m_out2.is_inbound = false
             AND m_out2.created_at >= TIMESTAMP(@start) AND m_out2.created_at <= TIMESTAMP(@end)
           GROUP BY 1
