@@ -37,8 +37,12 @@ function getDateRange(preset) {
 }
 
 let currentRange = getDateRange('last-7');
-const qs = () => `start=${currentRange.start.toISOString()}&end=${currentRange.end.toISOString()}`;
-const api = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(r.status); return r.json(); };
+const API_BASE_URL = window.location.hostname === 'localhost' ? '' : 'https://your-backend-url.onrender.com';
+const api = async (url) => { 
+  const r = await fetch(API_BASE_URL + url); 
+  if (!r.ok) throw new Error(r.status); 
+  return r.json(); 
+};
 
 // ─── Loading Overlay ─────────────────────────────────
 const loadingOverlay = document.createElement('div');
@@ -342,7 +346,7 @@ document.querySelectorAll('.dl-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const type = btn.dataset.type;
     const useDateRange = type !== 'pending-replies';
-    let url = `/api/download-conversations?type=${type}`;
+    let url = `${API_BASE_URL}/api/download-conversations?type=${type}`;
     if (useDateRange) url += `&${qs()}`;
     window.open(url, '_blank');
   });

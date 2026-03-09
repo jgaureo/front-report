@@ -9,7 +9,8 @@ const app = express();
 app.use(cors());
 
 const bigquery = new BigQuery({
-  keyFilename: path.resolve(__dirname, '../../credentials.json'),
+  // In production (Render/Firebase), the credentials file is usually in the same dir or provided via Secret
+  keyFilename: path.resolve(__dirname, process.env.GOOGLE_APPLICATION_CREDENTIALS || '../../credentials.json'),
   projectId: 'possible-ace-317306'
 });
 
@@ -502,5 +503,5 @@ app.get('/api/download-conversations', async (req, res) => {
   }
 });
 
-const PORT = 3001;
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`));
