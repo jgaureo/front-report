@@ -38,6 +38,7 @@ function getDateRange(preset) {
 
 let currentRange = getDateRange('last-7');
 const API_BASE_URL = window.location.hostname === 'localhost' ? '' : 'https://front-report.onrender.com';
+const qs = () => `start=${currentRange.start.toISOString()}&end=${currentRange.end.toISOString()}`;
 const api = async (url) => { 
   const r = await fetch(API_BASE_URL + url); 
   if (!r.ok) throw new Error(r.status); 
