@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>FreightRight — Dashboard</title>
+  <link rel="icon" href="/src/assets/favicon.png" />
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#1e3063",
+            "accent-green": "#73be4b",
+            "background-light": "#f6f6f8",
+            "background-dark": "#14161e",
+            "sea-fcl": "#5B86AD",
+            "sea-lcl": "#588B8B",
+            "air-lcl": "#D1A677",
+            "road-ltl": "#FB923C",
+            "road-ftl": "#1e3063",
+            "chart-pink": "#FF4081",
+          },
+          fontFamily: {
+            "display": ["Manrope"]
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    body { font-family: 'Manrope', sans-serif; min-height: max(884px, 100dvh); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .page { display: none; }
+    .page.active { display: block; }
+    /* Tooltip for column headers */
+    .col-tip { position: relative; cursor: help; }
+    .col-tip .tip-content {
+      display: none; position: absolute; z-index: 50; top: 100%; left: 50%; transform: translateX(-50%);
+      background: #1e293b; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 11px;
+      font-weight: 400; line-height: 1.5; max-width: 240px; width: max-content; white-space: normal;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25); margin-top: 4px; text-transform: none; letter-spacing: 0;
+    }
+    .col-tip .tip-content .tip-title { font-weight: 700; font-size: 12px; margin-bottom: 2px; }
+    .col-tip:hover .tip-content { display: block; }
+  </style>
+  <script type="module" crossorigin src="./assets/index-b4VxAOIB.js"></script>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display min-h-screen pb-48">
+
+  <!-- ═══════ HEADER ═══════ -->
+  <header class="sticky top-0 z-50 bg-background-light/80 backdrop-blur-md border-b border-primary/10 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <div class="bg-primary p-1.5 rounded-lg">
+        <span class="material-symbols-outlined text-white text-xl">local_shipping</span>
+      </div>
+      <h1 class="text-xl font-extrabold tracking-tight text-primary">Freight <span class="text-accent-green">Right</span></h1>
+    </div>
+    <div class="flex items-center gap-2">
+      <!-- Date Preset (Dashboard only) -->
+      <select id="datePreset" class="text-xs font-semibold text-primary bg-primary/5 border-none rounded-full px-3 py-1.5 focus:ring-primary/30 cursor-pointer">
+        <option value="today">Today</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="this-week">This week</option>
+        <option value="last-7" selected>Last 7 days</option>
+        <option value="last-week">Last week</option>
+        <option value="last-month">Last month</option>
+        <option value="last-quarter">Last quarter</option>
+        <option value="last-year">Last year</option>
+        <option value="ytd">Year to date</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <button class="size-10 flex items-center justify-center rounded-full bg-primary/5 text-primary">
+        <span class="material-symbols-outlined">notifications</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Custom date range (hidden by default) -->
+  <div id="customRange" class="hidden px-4 py-2 bg-white border-b border-slate-100 flex items-center gap-2 flex-wrap">
+    <input type="date" id="customStart" class="text-xs border border-slate-200 rounded-lg px-2 py-1" />
+    <span class="text-xs text-slate-400">to</span>
+    <input type="date" id="customEnd" class="text-xs border border-slate-200 rounded-lg px-2 py-1" />
+    <button id="applyCustom" class="text-xs font-bold text-white bg-accent-green px-3 py-1 rounded-lg">Apply</button>
+  </div>
+
+  <!-- ═══════ PAGE: DASHBOARD ═══════ -->
+  <main id="page-dashboard" class="page active p-4 space-y-6">
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-2 gap-3" id="kpiCards">
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Open</p>
+        <div class="flex items-end justify-between mt-1">
+          <p class="text-3xl font-bold text-primary" id="kpi-open">—</p>
+        </div>
+      </div>
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Waiting</p>
+        <div class="flex items-end justify-between mt-1">
+          <p class="text-3xl font-bold text-primary" id="kpi-waiting">—</p>
+        </div>
+      </div>
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Resolved</p>
+        <div class="flex items-end justify-between mt-1">
+          <p class="text-3xl font-bold text-primary" id="kpi-resolved">—</p>
+        </div>
+      </div>
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Archived</p>
+        <div class="flex items-end justify-between mt-1">
+          <p class="text-3xl font-bold text-primary" id="kpi-archived">—</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Conversation Trend -->
+    <section class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-primary">Conversation Trend</h2>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase" data-type="conversation-trend" data-filename="conversation-trend.csv">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 p-4 relative">
+        <div class="flex gap-4 mb-3">
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-sea-fcl"></div><span class="text-[10px] font-semibold text-slate-500">Conversations</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-chart-pink"></div><span class="text-[10px] font-semibold text-slate-500">Replies</span></div>
+        </div>
+        <svg id="trendChart" class="w-full" height="200" preserveAspectRatio="xMidYMid meet"></svg>
+        <div id="trendTooltip" class="hidden absolute bg-slate-800 text-white text-[11px] px-3 py-2 rounded-lg pointer-events-none z-10 shadow-lg"></div>
+      </div>
+    </section>
+
+    <!-- Shipment Modes -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-primary">Shipment Modes</h2>
+      </div>
+      <div class="flex flex-wrap gap-x-4 gap-y-2 pb-1">
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-sea-fcl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Ocean FCL</span></div>
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-sea-lcl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Ocean LCL</span></div>
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-air-lcl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Air LCL</span></div>
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-road-ltl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Road LTL</span></div>
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-road-ftl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Road FTL</span></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3" id="donutGrid"></div>
+    </section>
+
+    <!-- Top 5 Accounts -->
+    <section class="space-y-4">
+      <h2 class="text-lg font-bold text-primary">Top 5 Accounts</h2>
+      <div class="bg-white dark:bg-background-dark/50 p-5 rounded-xl shadow-sm border border-primary/5">
+        <div id="topAccounts" class="space-y-4">
+          <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+        </div>
+        <!-- Status Legend -->
+        <div class="flex flex-wrap gap-3 mt-4 pt-3 border-t border-slate-100">
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded bg-sea-fcl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Open</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded bg-road-ltl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Waiting</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded bg-accent-green"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Resolved</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded bg-slate-400"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Archived</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Performance -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-primary">Team Performance</h2>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase" data-type="team-assignments" data-filename="team-assignments.csv">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="overflow-x-auto no-scrollbar -mx-4 px-4">
+        <div class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden inline-block min-w-full">
+          <table class="min-w-full divide-y divide-slate-100">
+            <thead class="bg-slate-50/50">
+              <tr>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Teammate</th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip">
+                  Assigned ↓
+                  <div class="tip-content"><div class="tip-title">Assigned conversations</div>Conversations with activity this period while this teammate was the assignee.</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip">
+                  Touched
+                  <div class="tip-content"><div class="tip-title">Touched conversations</div>Conversations with an action taken by this teammate (applied a tag, sent a message, commented, etc).</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip">
+                  Messages
+                  <div class="tip-content"><div class="tip-title">Messages sent</div>Total number of outbound messages sent during the time period.</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip">
+                  Replies
+                  <div class="tip-content"><div class="tip-title">Replies sent</div>Outbound messages sent by your teammates in reply to an inbound message.</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap col-tip">
+                  Avg Reply
+                  <div class="tip-content"><div class="tip-title">Reply time (avg)</div>Time between receiving an inbound message and sending an outbound reply in a given conversation segment. Takes business hours and shifts into consideration.</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap col-tip">
+                  Avg 1st Reply
+                  <div class="tip-content"><div class="tip-title">First reply time (avg)</div>Time between receiving the first inbound message and sending the first outbound reply in a given conversation segment. Takes business hours and shifts into consideration.</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="teamBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pending Replies -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-primary">Pending Replies</h2>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase" data-type="pending-replies" data-filename="pending-replies.csv">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="overflow-x-auto no-scrollbar -mx-4 px-4">
+        <div class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden inline-block min-w-full">
+          <table class="min-w-full divide-y divide-slate-100">
+            <thead class="bg-slate-50/50">
+              <tr>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Teammate</th>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Age</th>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Subject</th>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Conversation ID</th>
+              </tr>
+            </thead>
+            <tbody id="pendingBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ═══════ PAGE: TEAMS ═══════ -->
+  <main id="page-teams" class="page flex-1 overflow-y-auto px-4 pb-24">
+    <div class="flex items-center justify-between py-4">
+      <h2 class="text-xl font-extrabold text-slate-900 dark:text-slate-100">Teams</h2>
+    </div>
+    <div class="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+      <div class="px-4 py-4 border-b border-slate-100 dark:border-slate-800">
+        <h3 class="text-base font-bold text-slate-800 dark:text-slate-200">Internal Team Directory</h3>
+        <p class="text-xs text-slate-500 mt-1">Performance overview for the selected period</p>
+      </div>
+      <div id="teamDirectory" class="divide-y divide-slate-50 dark:divide-slate-800">
+        <div class="p-6 text-center text-xs text-slate-400">Loading…</div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══════ PAGE: SETTINGS ═══════ -->
+  <main id="page-settings" class="page flex-1 overflow-y-auto pb-24">
+    <div class="px-4 pt-6 pb-2">
+      <h2 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Freight Right</h2>
+      <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Manage your account and app preferences.</p>
+    </div>
+
+    <!-- Profile Summary -->
+    <div class="mx-4 mt-4 mb-6 flex items-center gap-4 p-4 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
+      <div class="relative size-12 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center">
+        <span class="material-symbols-outlined text-primary text-2xl">person</span>
+      </div>
+      <div class="flex-1">
+        <p class="text-base font-bold text-slate-900 dark:text-white leading-tight">Alexander</p>
+        <p class="text-xs text-slate-500 dark:text-slate-400">alex@freightright.com</p>
+      </div>
+      <span class="material-symbols-outlined text-slate-400">chevron_right</span>
+    </div>
+
+    <div class="px-4 space-y-6">
+      <!-- Display Preferences -->
+      <div class="bg-white dark:bg-slate-900 rounded-xl p-5 shadow-sm border border-slate-100 dark:border-slate-800">
+        <div class="flex items-center gap-2 mb-4">
+          <span class="material-symbols-outlined text-primary dark:text-blue-400">palette</span>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Display Preferences</h3>
+        </div>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">Choose how Freight Right looks on your device.</p>
+        <div class="flex p-1 bg-background-light dark:bg-slate-800 rounded-lg">
+          <button id="themeLight" class="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md bg-white dark:bg-transparent shadow-sm text-primary dark:text-slate-400 font-medium transition-all">
+            <span class="material-symbols-outlined text-lg">light_mode</span><span class="text-sm">Light</span>
+          </button>
+          <button id="themeDark" class="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-slate-500 dark:text-white dark:bg-slate-700 dark:shadow-sm font-medium transition-all">
+            <span class="material-symbols-outlined text-lg">dark_mode</span><span class="text-sm">Dark</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- General Nav -->
+      <div class="bg-white dark:bg-slate-900 rounded-xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-800">
+        <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+          <li class="flex items-center gap-4 p-4">
+            <span class="material-symbols-outlined text-slate-400">notifications</span>
+            <span class="flex-1 text-sm font-medium">Notifications</span>
+            <span class="material-symbols-outlined text-slate-300 text-lg">chevron_right</span>
+          </li>
+          <li class="flex items-center gap-4 p-4">
+            <span class="material-symbols-outlined text-slate-400">security</span>
+            <span class="flex-1 text-sm font-medium">Security</span>
+            <span class="material-symbols-outlined text-slate-300 text-lg">chevron_right</span>
+          </li>
+          <li class="flex items-center gap-4 p-4">
+            <span class="material-symbols-outlined text-slate-400">language</span>
+            <span class="flex-1 text-sm font-medium">Language</span>
+            <div class="flex items-center gap-1">
+              <span class="text-xs text-slate-400">English</span>
+              <span class="material-symbols-outlined text-slate-300 text-lg">chevron_right</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══════ BOTTOM NAV ═══════ -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-primary/5 z-50">
+    <div class="px-6 py-3 flex items-center justify-between max-w-md mx-auto">
+      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-primary" data-page="dashboard">
+        <span class="material-symbols-outlined fill-[1]">dashboard</span>
+        <span class="text-[9px] font-bold uppercase tracking-tight">Dashboard</span>
+      </a>
+      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-slate-400" data-page="teams">
+        <span class="material-symbols-outlined">group</span>
+        <span class="text-[9px] font-bold uppercase tracking-tight">Teams</span>
+      </a>
+      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-slate-400" data-page="settings">
+        <span class="material-symbols-outlined">settings</span>
+        <span class="text-[9px] font-bold uppercase tracking-tight">Settings</span>
+      </a>
+    </div>
+  </nav>
+
+</body>
+</html>
