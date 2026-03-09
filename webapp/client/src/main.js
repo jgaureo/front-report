@@ -1,3 +1,20 @@
+// ─── Firebase Auth ──────────────────────────────────
+firebase.initializeApp({
+  apiKey: "AIzaSyB9bzvJnQgQTsXajtKmOWXjut4gN9PRsLU",
+  authDomain: "front-report.firebaseapp.com",
+  projectId: "front-report",
+  storageBucket: "front-report.firebasestorage.app",
+  messagingSenderId: "797597961440",
+  appId: "1:797597961440:web:9c975ccf35db6aa1b3d485",
+});
+
+const auth = firebase.auth();
+const googleProvider = new firebase.auth.GoogleAuthProvider();
+googleProvider.setCustomParameters({ hd: 'freightright.com' });
+
+let currentUser = null;
+let idToken = null;
+
 // ─── Colors ──────────────────────────────────────────
 const DONUT_COLORS = {
   'Ocean FCL': '#5B86AD', 'Ocean LCL': '#588B8B', 'Air LCL': '#D1A677',
@@ -39,10 +56,16 @@ function getDateRange(preset) {
 let currentRange = getDateRange('last-7');
 const API_BASE_URL = window.location.hostname === 'localhost' ? '' : 'https://front-report.onrender.com';
 const qs = () => `start=${currentRange.start.toISOString()}&end=${currentRange.end.toISOString()}`;
-const api = async (url) => { 
-  const r = await fetch(API_BASE_URL + url); 
-  if (!r.ok) throw new Error(r.status); 
-  return r.json(); 
+const api = async (url, _retry) => {
+  const headers = {};
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+  const r = await fetch(API_BASE_URL + url, { headers });
+  if (r.status === 401 && !_retry && currentUser) {
+    idToken = await currentUser.getIdToken(true);
+    return api(url, true);
+  }
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
 };
 
 // ─── Loading Overlay ─────────────────────────────────
@@ -344,12 +367,23 @@ function renderTeamDirectory(data) {
 
 // ─── CSV Download ────────────────────────────────────
 document.querySelectorAll('.dl-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
+  btn.addEventListener('click', async () => {
     const type = btn.dataset.type;
     const useDateRange = type !== 'pending-replies';
     let url = `${API_BASE_URL}/api/download-conversations?type=${type}`;
     if (useDateRange) url += `&${qs()}`;
-    window.open(url, '_blank');
+    const headers = {};
+    if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+    try {
+      const r = await fetch(url, { headers });
+      if (!r.ok) throw new Error(r.status);
+      const blob = await r.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = btn.dataset.filename || `${type}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (err) { console.error('Download error:', err); }
   });
 });
 
@@ -408,6 +442,81 @@ async function loadAll() {
   }
 }
 
-// ─── Init ────────────────────────────────────────────
-navigateTo('dashboard');
-loadAll();
+// ─── Auth UI ────────────────────────────────────────
+const loginOverlay = document.getElementById('loginOverlay');
+const loginError = document.getElementById('loginError');
+const loginSpinner = document.getElementById('loginSpinner');
+
+function updateAuthUI(user) {
+  const btn = document.getElementById('authBtn');
+  if (user) {
+    if (user.photoURL) {
+      btn.innerHTML = `<img src="${user.photoURL}" alt="" class="size-10 rounded-full object-cover" referrerpolicy="no-referrer" />`;
+    } else {
+      const ini = (user.displayName || user.email || '?').split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+      const c = avatarColor(user.displayName || user.email);
+      btn.innerHTML = `<span class="size-10 rounded-full flex items-center justify-center text-xs font-bold text-white" style="background:${c}">${ini}</span>`;
+    }
+    btn.title = `Signed in as ${user.email}`;
+    // Update settings page
+    const sName = document.getElementById('settingsName');
+    const sEmail = document.getElementById('settingsEmail');
+    const sAvatar = document.getElementById('settingsAvatar');
+    if (sName) sName.textContent = user.displayName || user.email;
+    if (sEmail) sEmail.textContent = user.email;
+    if (sAvatar && user.photoURL) {
+      sAvatar.innerHTML = `<img src="${user.photoURL}" alt="" class="size-12 rounded-full object-cover" referrerpolicy="no-referrer" />`;
+    }
+  } else {
+    btn.innerHTML = `<span class="material-symbols-outlined">login</span>`;
+    btn.title = 'Sign in';
+  }
+}
+
+// Warm up Render backend while user sees login screen (response is 401, but wakes the server)
+fetch(API_BASE_URL + '/api/dashboard-stats').catch(() => {});
+
+// Google Sign-In button
+document.getElementById('googleSignInBtn').addEventListener('click', async () => {
+  loginError.classList.add('hidden');
+  loginSpinner.classList.remove('hidden');
+  try {
+    await auth.signInWithPopup(googleProvider);
+  } catch (err) {
+    loginSpinner.classList.add('hidden');
+    loginError.textContent = err.code === 'auth/popup-closed-by-user' ? '' : (err.message || 'Sign-in failed');
+    loginError.classList.toggle('hidden', !loginError.textContent);
+  }
+});
+
+// Header auth button: sign out when already signed in
+document.getElementById('authBtn').addEventListener('click', async () => {
+  if (currentUser) {
+    await auth.signOut();
+    window.location.reload();
+  }
+});
+
+// Auth state listener
+auth.onAuthStateChanged(async (user) => {
+  if (user) {
+    if (!user.email.endsWith('@freightright.com')) {
+      await auth.signOut();
+      loginSpinner.classList.add('hidden');
+      loginError.textContent = 'Access restricted to @freightright.com accounts.';
+      loginError.classList.remove('hidden');
+      return;
+    }
+    currentUser = user;
+    idToken = await user.getIdToken();
+    updateAuthUI(user);
+    loginOverlay.style.display = 'none';
+    navigateTo('dashboard');
+    loadAll();
+  } else {
+    currentUser = null;
+    idToken = null;
+    updateAuthUI(null);
+    loginOverlay.style.display = 'flex';
+  }
+});

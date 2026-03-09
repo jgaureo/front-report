@@ -1,12 +1,36 @@
 import express from 'express';
 import cors from 'cors';
 import { BigQuery } from '@google-cloud/bigquery';
+import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(cors());
+
+// ─── Firebase Admin ──────────────────────────────────────
+admin.initializeApp({ projectId: 'front-report' });
+
+async function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing auth token' });
+  }
+  try {
+    const token = authHeader.split('Bearer ')[1];
+    const decoded = await admin.auth().verifyIdToken(token);
+    if (!decoded.email || !decoded.email.endsWith('@freightright.com')) {
+      return res.status(403).json({ error: 'Unauthorized domain' });
+    }
+    req.user = decoded;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+app.use('/api', requireAuth);
 
 const bigquery = new BigQuery({
   // In production (Render/Firebase), the credentials file is usually in the same dir or provided via Secret
