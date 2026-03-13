@@ -58,9 +58,8 @@ function dateParams(req) {
   const start = req.query.start
     ? new Date(req.query.start)
     : new Date(end.getTime() - 6 * 86400000);
-  start.setHours(0, 0, 0, 0);
-  const fmt = d => d.toISOString().replace('T', ' ').replace('Z', '');
-  return { startStr: fmt(start), endStr: fmt(end) };
+  if (!req.query.start) start.setHours(0, 0, 0, 0);
+  return { startStr: start.toISOString(), endStr: end.toISOString() };
 }
 
 async function runQuery(sql, params = {}) {
@@ -402,7 +401,7 @@ app.get('/api/zero-replies-conversations', async (req, res) => {
         COALESCE(CONCAT(tm.first_name, ' ', tm.last_name), '—') AS teammate,
         tm.first_name,
         tm.last_name,
-        FORMAT_TIMESTAMP('%b %d, %Y', c.created_at, '${TZ}') AS created_date,
+        FORMAT_TIMESTAMP('%b %d, %Y %I:%M %p PST', c.created_at, '${TZ}') AS created_date,
         TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), c.created_at, HOUR) AS age_hours,
         c.subject,
         STRING_AGG(DISTINCT t2.name, ', ' ORDER BY t2.name) AS tags
@@ -501,7 +500,7 @@ app.get('/api/download-conversations', async (req, res) => {
       SELECT
         c.id AS conversation_id,
         COALESCE(CONCAT(tm.first_name, ' ', tm.last_name), '—') AS teammate,
-        FORMAT_TIMESTAMP('%b %d, %Y', c.created_at, '${TZ}') AS created_date,
+        FORMAT_TIMESTAMP('%b %d, %Y %I:%M %p PST', c.created_at, '${TZ}') AS created_date,
         CONCAT(CAST(TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), c.created_at, DAY) AS STRING), 'd') AS age,
         c.subject,
         STRING_AGG(DISTINCT t.name, ', ' ORDER BY t.name) AS tags,
