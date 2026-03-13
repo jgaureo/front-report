@@ -11,17 +11,28 @@ const app = express();
 app.use(cors());
 
 // ─── Firebase Admin ──────────────────────────────────────
-let firestoreDb;
-try {
-  const serviceAccountPath = path.resolve(__dirname, './credentials.json');
-  const fs = await import('fs');
-  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
-  admin.initializeApp({ projectId: 'front-report' });
-  const dbApp = admin.initializeApp({ credential: admin.credential.cert(serviceAccount) }, 'dbApp');
-  firestoreDb = dbApp.firestore();
-} catch (e) {
-  if (!admin.apps.length) admin.initializeApp({ projectId: 'front-report' });
+let firestoreDb = null;
+const fs = await import('fs');
+
+// Try to find Firebase credentials for Firestore access
+const fbCredPaths = [
+  path.resolve(__dirname, './firebase-credentials.json'),
+  path.resolve(__dirname, './credentials.json'),
+];
+let fbCred = null;
+for (const p of fbCredPaths) {
+  try { fbCred = JSON.parse(fs.readFileSync(p, 'utf8')); break; } catch {}
+}
+
+if (fbCred && fbCred.project_id === 'front-report') {
+  // We have Firebase credentials — init with them for both Auth and Firestore
+  admin.initializeApp({ credential: admin.credential.cert(fbCred), projectId: 'front-report' });
   firestoreDb = admin.firestore();
+  console.log('Firebase Admin: initialized with credentials (Auth + Firestore)');
+} else {
+  // No Firebase credentials — Auth-only mode (Firestore disabled)
+  admin.initializeApp({ projectId: 'front-report' });
+  console.log('Firebase Admin: initialized without Firestore credentials (Auth only)');
 }
 
 async function requireAuth(req, res, next) {
@@ -82,6 +93,7 @@ async function runQuery(sql, params = {}) {
 
 // ─── Team Schedules Endpoints ────────────────────────────
 app.get('/api/team-schedules', async (req, res) => {
+  if (!firestoreDb) return res.json({});
   try {
     const snap = await firestoreDb.collection('teammate_schedules').get();
     const schedules = {};
@@ -89,11 +101,12 @@ app.get('/api/team-schedules', async (req, res) => {
     res.json(schedules);
   } catch (err) {
     console.error('get-schedules error:', err);
-    res.status(500).json({ error: err.message });
+    res.json({});
   }
 });
 
 app.post('/api/team-schedules', async (req, res) => {
+  if (!firestoreDb) return res.status(503).json({ error: 'Firestore not configured' });
   try {
     const { teammate_id, schedule } = req.body;
     if (!teammate_id || !schedule) return res.status(400).json({ error: 'Missing data' });
@@ -414,9 +427,13 @@ app.get('/api/team-performance', async (req, res) => {
     const rows = await runQuery(sql, { start: startStr, end: endStr });
     
     // Fetch all schedules from Firestore to calculate business minutes
-    const snap = await firestoreDb.collection('teammate_schedules').get();
     const schedules = {};
-    snap.forEach(doc => { schedules[doc.id] = doc.data(); });
+    if (firestoreDb) {
+      try {
+        const snap = await firestoreDb.collection('teammate_schedules').get();
+        snap.forEach(doc => { schedules[doc.id] = doc.data(); });
+      } catch (e) { console.error('Failed to fetch schedules:', e.message); }
+    }
 
     res.json(rows.map(r => {
       const schedule = schedules[r.teammate_id] || null;

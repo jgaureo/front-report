@@ -9,10 +9,13 @@ import { calculateBusinessMinutes } from './businessHours.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const serviceAccountPath = path.resolve(__dirname, './credentials.json');
+let firestoreDb = null;
+const fsModule = await import('fs');
+const fbCredPath = path.resolve(__dirname, './credentials.json');
 try {
-  const serviceAccount = await import('fs').then(fs => JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8')));
-  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+  const cred = JSON.parse(fsModule.readFileSync(fbCredPath, 'utf8'));
+  admin.initializeApp({ credential: admin.credential.cert(cred) });
+  firestoreDb = admin.firestore();
 } catch (e) {
   admin.initializeApp({ projectId: 'possible-ace-317306' });
 }
@@ -56,21 +59,23 @@ async function runQuery(sql, params = {}) {
 // ─── Team Schedules Endpoints ────────────────────────────
 app.get('/api/team-schedules', async (req, res) => {
   try {
-    const snap = await admin.firestore().collection('teammate_schedules').get();
+    if (!firestoreDb) return res.json({});
+    const snap = await firestoreDb.collection('teammate_schedules').get();
     const schedules = {};
     snap.forEach(doc => { schedules[doc.id] = doc.data(); });
     res.json(schedules);
   } catch (err) {
     console.error('get-schedules error:', err);
-    res.status(500).json({ error: err.message });
+    res.json({});
   }
 });
 
 app.post('/api/team-schedules', async (req, res) => {
+  if (!firestoreDb) return res.status(503).json({ error: 'Firestore not configured' });
   try {
     const { teammate_id, schedule } = req.body;
     if (!teammate_id || !schedule) return res.status(400).json({ error: 'Missing data' });
-    await admin.firestore().collection('teammate_schedules').doc(String(teammate_id)).set(schedule);
+    await firestoreDb.collection('teammate_schedules').doc(String(teammate_id)).set(schedule);
     res.json({ success: true });
   } catch (err) {
     console.error('post-schedules error:', err);
@@ -357,9 +362,13 @@ app.get('/api/team-performance', async (req, res) => {
     const rows = await runQuery(sql, { start: startStr, end: endStr });
     
     // Fetch all schedules from Firestore to calculate business minutes
-    const snap = await admin.firestore().collection('teammate_schedules').get();
     const schedules = {};
-    snap.forEach(doc => { schedules[doc.id] = doc.data(); });
+    if (firestoreDb) {
+      try {
+        const snap = await firestoreDb.collection('teammate_schedules').get();
+        snap.forEach(doc => { schedules[doc.id] = doc.data(); });
+      } catch (e) { console.error('Failed to fetch schedules:', e.message); }
+    }
 
     res.json(rows.map(r => {
       const schedule = schedules[r.teammate_id] || null;
