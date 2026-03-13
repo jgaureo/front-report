@@ -14,6 +14,7 @@ googleProvider.setCustomParameters({ hd: 'freightright.com' });
 
 let currentUser = null;
 let idToken = null;
+let teamSchedules = {};
 
 // ─── Colors ──────────────────────────────────────────
 const DONUT_COLORS = {
@@ -355,14 +356,113 @@ function renderTeamDirectory(data) {
           <p class="text-xs text-slate-500">${tm.assigned_conversations} assigned · ${tm.messages_sent} messages</p>
         </div>
       </div>
-      <div class="flex flex-col items-end">
+      <div class="flex flex-col items-end gap-1.5">
         <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
           <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Active
         </span>
+        <button class="text-[10px] font-bold text-primary hover:underline edit-schedule-btn" data-id="${tm.teammate_id}" data-name="${escHtml(tm.first_name)}">Edit Schedule</button>
         <p class="text-[10px] text-slate-400 mt-1 font-medium">Avg reply: ${fmtMin(tm.avg_reply_minutes)}</p>
       </div>
     </div>`;
   }).join('');
+}
+
+// ─── Shift Schedule Logic ─────────────────────────────────
+const scheduleModal = document.getElementById('scheduleModal');
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('.edit-schedule-btn');
+  if (btn) {
+    openScheduleModal(btn.dataset.id, btn.dataset.name);
+  }
+});
+
+function openScheduleModal(teammateId, name) {
+  const sched = teamSchedules[teammateId] || {
+    timezone: 'America/Los_Angeles',
+    workDays: [1, 2, 3, 4, 5],
+    startHour: '08:00',
+    endHour: '17:00'
+  };
+
+  document.getElementById('scheduleModalTitle').textContent = `Shift Schedule: ${name}`;
+  document.getElementById('scheduleTeammateId').value = teammateId;
+  document.getElementById('scheduleTimezone').value = sched.timezone || 'America/Los_Angeles';
+
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const container = document.getElementById('workingDaysContainer');
+  
+  let html = days.map((day, idx) => {
+    const isW = (sched.workDays || []).includes(idx);
+    return `
+      <label class="flex items-center gap-3 cursor-pointer p-2 rounded hover:bg-slate-50 dark:hover:bg-slate-800">
+        <input type="checkbox" class="schedule-day-cb rounded border-slate-300 text-primary focus:ring-primary w-4 h-4" value="${idx}" ${isW ? 'checked' : ''} />
+        <span class="text-sm font-medium text-slate-700 dark:text-slate-300 w-32">${day}</span>
+      </label>
+    `;
+  }).join('');
+  
+  html += `
+    <div class="flex items-center gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+      <div class="flex-1">
+        <label class="block text-xs font-bold text-slate-500 mb-1">Start Time</label>
+        <input type="time" id="scheduleStartTime" class="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-primary" value="${sched.startHour || '08:00'}" />
+      </div>
+      <div class="flex-1">
+        <label class="block text-xs font-bold text-slate-500 mb-1">End Time</label>
+        <input type="time" id="scheduleEndTime" class="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-primary" value="${sched.endHour || '17:00'}" />
+      </div>
+    </div>
+  `;
+
+  container.innerHTML = html;
+  scheduleModal.classList.remove('hidden');
+  scheduleModal.classList.add('flex');
+}
+
+if (document.getElementById('closeScheduleModal')) {
+  document.getElementById('closeScheduleModal').addEventListener('click', () => {
+    scheduleModal.classList.add('hidden');
+    scheduleModal.classList.remove('flex');
+  });
+  document.getElementById('cancelScheduleBtn').addEventListener('click', () => {
+    document.getElementById('closeScheduleModal').click();
+  });
+
+  document.getElementById('saveScheduleBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('saveScheduleBtn');
+    const teammateId = document.getElementById('scheduleTeammateId').value;
+    const timezone = document.getElementById('scheduleTimezone').value;
+    const startHour = document.getElementById('scheduleStartTime').value;
+    const endHour = document.getElementById('scheduleEndTime').value;
+    
+    const checkboxes = document.querySelectorAll('.schedule-day-cb:checked');
+    const workDays = Array.from(checkboxes).map(cb => Number(cb.value));
+    
+    const schedule = { timezone, workDays, startHour, endHour };
+    
+    btn.disabled = true;
+    btn.innerHTML = `<div class="size-4 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div> Saving...`;
+    
+    try {
+      const res = await api('/api/team-schedules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teammate_id: teammateId, schedule })
+      });
+      if (res.success || res.error) {
+        teamSchedules[teammateId] = schedule;
+        document.getElementById('closeScheduleModal').click();
+        loadAll();
+      }
+    } catch (err) {
+      alert('Failed to save schedule');
+      console.error(err);
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = `Save Changes`;
+    }
+  });
 }
 
 // ─── CSV Download ────────────────────────────────────
@@ -420,13 +520,16 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
       api('/api/zero-replies-conversations'),
       api(`/api/top-accounts?${q}`),
+      api(`/api/team-schedules`),
     ]);
+
+    teamSchedules = schedules || {};
 
     renderKPI(stats);
     renderDonuts(stats.quotes);

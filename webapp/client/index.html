@@ -358,6 +358,53 @@
     </div>
   </nav>
 
+  <!-- ═══════ SHIFT SCHEDULE MODAL ═══════ -->
+  <div id="scheduleModal" class="fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white" id="scheduleModalTitle">Edit Schedule</h3>
+          <p class="text-xs text-slate-500" id="scheduleModalSubtitle">Select working days and hours</p>
+        </div>
+        <button id="closeScheduleModal" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="p-5 flex-1 overflow-y-auto space-y-4">
+        <input type="hidden" id="scheduleTeammateId" />
+        
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Timezone</label>
+          <select id="scheduleTimezone" class="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-primary">
+            <option value="America/Los_Angeles">Pacific Time (US & Canada)</option>
+            <option value="America/Denver">Mountain Time (US & Canada)</option>
+            <option value="America/Chicago">Central Time (US & Canada)</option>
+            <option value="America/New_York">Eastern Time (US & Canada)</option>
+            <option value="UTC">UTC</option>
+            <option value="Europe/London">London</option>
+            <option value="Asia/Manila">Manila</option>
+          </select>
+        </div>
+        
+        <div>
+          <div class="flex items-center justify-between mt-4 mb-2 pb-1 border-b border-slate-100 dark:border-slate-800">
+            <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300">Working Days & Hours</h4>
+            <span class="text-[10px] text-slate-400">24-hour format (e.g. 09:00 - 17:00)</span>
+          </div>
+          <div class="space-y-3 mt-3" id="workingDaysContainer">
+            <!-- JS populates days -->
+          </div>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-900/50">
+        <button id="cancelScheduleBtn" class="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors">Cancel</button>
+        <button id="saveScheduleBtn" class="px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-primary/90 rounded-lg flex items-center gap-2 transition-colors">
+          Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Firebase Auth SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>

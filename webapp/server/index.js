@@ -4,6 +4,7 @@ import { BigQuery } from '@google-cloud/bigquery';
 import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { calculateBusinessMinutes } from './businessHours.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -67,6 +68,31 @@ async function runQuery(sql, params = {}) {
   const [rows] = await bigquery.query(options);
   return rows;
 }
+
+// ─── Team Schedules Endpoints ────────────────────────────
+app.get('/api/team-schedules', async (req, res) => {
+  try {
+    const snap = await admin.firestore().collection('teammate_schedules').get();
+    const schedules = {};
+    snap.forEach(doc => { schedules[doc.id] = doc.data(); });
+    res.json(schedules);
+  } catch (err) {
+    console.error('get-schedules error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/team-schedules', async (req, res) => {
+  try {
+    const { teammate_id, schedule } = req.body;
+    if (!teammate_id || !schedule) return res.status(400).json({ error: 'Missing data' });
+    await admin.firestore().collection('teammate_schedules').doc(String(teammate_id)).set(schedule);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('post-schedules error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ─── 1. Dashboard Stats (Conversation Overview + Direction Donuts) ─────
 // Now filtered to Sales Team inbox only
@@ -310,7 +336,7 @@ app.get('/api/team-performance', async (req, res) => {
       reply_times AS (
         SELECT
           m_out.author_id AS teammate_id,
-          AVG(TIMESTAMP_DIFF(m_out.created_at, m_in_max.last_inbound, MINUTE)) AS avg_reply_min
+          ARRAY_AGG(STRUCT(m_out.created_at AS out_ts, m_in_max.last_inbound AS in_ts)) AS pairs
         FROM \`${FRONT}.message\` m_out
         INNER JOIN sales_convos sc ON sc.conversation_id = m_out.conversation_id
         JOIN (
@@ -333,7 +359,7 @@ app.get('/api/team-performance', async (req, res) => {
       first_reply AS (
         SELECT
           fo.author_id AS teammate_id,
-          AVG(TIMESTAMP_DIFF(fo.first_out, fi.first_in, MINUTE)) AS avg_first_reply_min
+          ARRAY_AGG(STRUCT(fo.first_out AS out_ts, fi.first_in AS in_ts)) AS pairs
         FROM (
           SELECT conversation_id, author_id, MIN(created_at) AS first_out
           FROM \`${FRONT}.message\`
@@ -361,8 +387,9 @@ app.get('/api/team-performance', async (req, res) => {
         COALESCE(tc.touched_convos, 0) AS touched_conversations,
         COALESCE(ma.messages_sent, 0) AS messages_sent,
         COALESCE(rs.reply_count, 0) AS replies_sent,
-        COALESCE(rt.avg_reply_min, 0) AS avg_reply_minutes,
-        COALESCE(fr.avg_first_reply_min, 0) AS avg_first_reply_minutes
+        -- Fetch pairs arrays 
+        rt.pairs AS reply_pairs,
+        fr.pairs AS first_reply_pairs
       FROM \`${FRONT}.teammate\` tm
       LEFT JOIN assigned a ON a.teammate_id = tm.id
       LEFT JOIN touched tc ON tc.teammate_id = tm.id
@@ -374,18 +401,42 @@ app.get('/api/team-performance', async (req, res) => {
       ORDER BY assigned_conversations DESC
     `;
     const rows = await runQuery(sql, { start: startStr, end: endStr });
-    res.json(rows.map(r => ({
-      teammate_id: r.teammate_id,
-      name: r.name,
-      first_name: r.first_name,
-      last_name: r.last_name,
-      assigned_conversations: Number(r.assigned_conversations),
-      touched_conversations: Number(r.touched_conversations),
-      messages_sent: Number(r.messages_sent),
-      replies_sent: Number(r.replies_sent),
-      avg_reply_minutes: Number(r.avg_reply_minutes),
-      avg_first_reply_minutes: Number(r.avg_first_reply_minutes),
-    })));
+    
+    // Fetch all schedules from Firestore to calculate business minutes
+    const snap = await admin.firestore().collection('teammate_schedules').get();
+    const schedules = {};
+    snap.forEach(doc => { schedules[doc.id] = doc.data(); });
+
+    res.json(rows.map(r => {
+      const schedule = schedules[r.teammate_id] || null;
+      let avg_reply_minutes = 0;
+      let avg_first_reply_minutes = 0;
+
+      if (r.reply_pairs && r.reply_pairs.length > 0) {
+        let total = 0;
+        for (const p of r.reply_pairs) total += calculateBusinessMinutes(p.in_ts.value, p.out_ts.value, schedule);
+        avg_reply_minutes = total / r.reply_pairs.length;
+      }
+
+      if (r.first_reply_pairs && r.first_reply_pairs.length > 0) {
+        let total = 0;
+        for (const p of r.first_reply_pairs) total += calculateBusinessMinutes(p.in_ts.value, p.out_ts.value, schedule);
+        avg_first_reply_minutes = total / r.first_reply_pairs.length;
+      }
+
+      return {
+        teammate_id: r.teammate_id,
+        name: r.name,
+        first_name: r.first_name,
+        last_name: r.last_name,
+        assigned_conversations: Number(r.assigned_conversations),
+        touched_conversations: Number(r.touched_conversations),
+        messages_sent: Number(r.messages_sent),
+        replies_sent: Number(r.replies_sent),
+        avg_reply_minutes,
+        avg_first_reply_minutes,
+      };
+    }));
   } catch (err) {
     console.error('team-performance error:', err);
     res.status(500).json({ error: err.message });
