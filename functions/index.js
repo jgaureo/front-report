@@ -7,9 +7,16 @@ import { fileURLToPath } from 'url';
 import admin from 'firebase-admin';
 import { calculateBusinessMinutes } from './businessHours.js';
 
-admin.initializeApp({ projectId: 'possible-ace-317306' });
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const serviceAccountPath = path.resolve(__dirname, './credentials.json');
+try {
+  const serviceAccount = await import('fs').then(fs => JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8')));
+  admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+} catch (e) {
+  admin.initializeApp({ projectId: 'possible-ace-317306' });
+}
+
 const app = express();
 app.use(cors());
 

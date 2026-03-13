@@ -545,6 +545,66 @@ async function loadAll() {
   }
 }
 
+// ─── Global Search ──────────────────────────────────
+const searchModal = document.getElementById('searchModal');
+const searchInput = document.getElementById('searchInput');
+const searchResults = document.getElementById('searchResults');
+let searchTimeout = null;
+
+document.getElementById('searchToggle').addEventListener('click', () => {
+  searchModal.classList.remove('hidden');
+  searchModal.classList.add('flex');
+  searchInput.value = '';
+  searchInput.focus();
+  searchResults.innerHTML = '<div class="text-center text-sm text-slate-400 py-12">Type a keyword to search across conversations, messages, and quotes.</div>';
+});
+
+document.getElementById('searchBack').addEventListener('click', () => {
+  searchModal.classList.add('hidden');
+  searchModal.classList.remove('flex');
+});
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimeout);
+  const q = searchInput.value.trim();
+  if (q.length < 2) {
+    searchResults.innerHTML = '<div class="text-center text-sm text-slate-400 py-12">Type at least 2 characters to search.</div>';
+    return;
+  }
+  searchResults.innerHTML = '<div class="flex justify-center py-12"><div class="size-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div></div>';
+  searchTimeout = setTimeout(() => performSearch(q), 400);
+});
+
+async function performSearch(q) {
+  try {
+    const data = await api(`/api/search?q=${encodeURIComponent(q)}`);
+    if (!data.length) {
+      searchResults.innerHTML = '<div class="text-center text-sm text-slate-400 py-12">No results found.</div>';
+      return;
+    }
+    const SOURCE_LABELS = { subject: 'Subject', message: 'Message', quote: 'Quote' };
+    const SOURCE_COLORS = { subject: 'bg-primary/10 text-primary', message: 'bg-amber-100 text-amber-700', quote: 'bg-green-100 text-green-700' };
+
+    searchResults.innerHTML = `<p class="text-xs text-slate-400 mb-2">${data.length} result${data.length > 1 ? 's' : ''}</p>` +
+      data.map(r => {
+        const frontLink = `${FRONT_URL}${r.conversation_id}`;
+        const badges = r.sources.map(s => `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${SOURCE_COLORS[s] || 'bg-slate-100 text-slate-500'}">${SOURCE_LABELS[s] || s}</span>`).join(' ');
+        const snippet = escHtml(r.snippet).replace(new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<mark class="bg-yellow-200 rounded px-0.5">$1</mark>');
+        return `<a href="${frontLink}" target="_blank" rel="noopener noreferrer" class="block bg-white rounded-xl border border-slate-100 p-4 hover:border-primary/30 hover:shadow-sm transition-all group">
+          <div class="flex items-start justify-between gap-2 mb-1.5">
+            <p class="text-sm font-semibold text-slate-800 group-hover:text-primary line-clamp-1">${escHtml(r.subject)}</p>
+            <span class="material-symbols-outlined text-slate-300 group-hover:text-primary text-base shrink-0">open_in_new</span>
+          </div>
+          <p class="text-xs text-slate-500 line-clamp-2 mb-2">${snippet}</p>
+          <div class="flex items-center gap-1.5">${badges}</div>
+        </a>`;
+      }).join('');
+  } catch (err) {
+    console.error('Search error:', err);
+    searchResults.innerHTML = '<div class="text-center text-sm text-red-500 py-12">Search failed. Please try again.</div>';
+  }
+}
+
 // ─── Auth UI ────────────────────────────────────────
 const loginOverlay = document.getElementById('loginOverlay');
 const loginError = document.getElementById('loginError');

@@ -11,7 +11,18 @@ const app = express();
 app.use(cors());
 
 // ─── Firebase Admin ──────────────────────────────────────
-admin.initializeApp({ projectId: 'front-report' });
+let firestoreDb;
+try {
+  const serviceAccountPath = path.resolve(__dirname, './credentials.json');
+  const fs = await import('fs');
+  const serviceAccount = JSON.parse(fs.readFileSync(serviceAccountPath, 'utf8'));
+  admin.initializeApp({ projectId: 'front-report' });
+  const dbApp = admin.initializeApp({ credential: admin.credential.cert(serviceAccount) }, 'dbApp');
+  firestoreDb = dbApp.firestore();
+} catch (e) {
+  if (!admin.apps.length) admin.initializeApp({ projectId: 'front-report' });
+  firestoreDb = admin.firestore();
+}
 
 async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -72,7 +83,7 @@ async function runQuery(sql, params = {}) {
 // ─── Team Schedules Endpoints ────────────────────────────
 app.get('/api/team-schedules', async (req, res) => {
   try {
-    const snap = await admin.firestore().collection('teammate_schedules').get();
+    const snap = await firestoreDb.collection('teammate_schedules').get();
     const schedules = {};
     snap.forEach(doc => { schedules[doc.id] = doc.data(); });
     res.json(schedules);
@@ -86,7 +97,7 @@ app.post('/api/team-schedules', async (req, res) => {
   try {
     const { teammate_id, schedule } = req.body;
     if (!teammate_id || !schedule) return res.status(400).json({ error: 'Missing data' });
-    await admin.firestore().collection('teammate_schedules').doc(String(teammate_id)).set(schedule);
+    await firestoreDb.collection('teammate_schedules').doc(String(teammate_id)).set(schedule);
     res.json({ success: true });
   } catch (err) {
     console.error('post-schedules error:', err);
@@ -403,7 +414,7 @@ app.get('/api/team-performance', async (req, res) => {
     const rows = await runQuery(sql, { start: startStr, end: endStr });
     
     // Fetch all schedules from Firestore to calculate business minutes
-    const snap = await admin.firestore().collection('teammate_schedules').get();
+    const snap = await firestoreDb.collection('teammate_schedules').get();
     const schedules = {};
     snap.forEach(doc => { schedules[doc.id] = doc.data(); });
 
@@ -523,7 +534,68 @@ app.get('/api/top-accounts', async (req, res) => {
   }
 });
 
-// ─── 6. CSV Download ──────────────────────────────────────
+// ─── 6. Global Search ────────────────────────────────────
+app.get('/api/search', async (req, res) => {
+  try {
+    const keyword = (req.query.q || '').trim();
+    if (!keyword || keyword.length < 2) return res.status(400).json({ error: 'Query too short (min 2 chars)' });
+
+    const sql = `
+      WITH matches AS (
+        -- Match in conversation subject
+        SELECT c.id AS conversation_id, c.subject, 'subject' AS match_source,
+               c.subject AS snippet, c.created_at
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        WHERE LOWER(c.subject) LIKE LOWER(CONCAT('%', @keyword, '%'))
+
+        UNION ALL
+
+        -- Match in message body
+        SELECT c.id AS conversation_id, c.subject, 'message' AS match_source,
+               SUBSTR(m.body, GREATEST(1, STRPOS(LOWER(m.body), LOWER(@keyword)) - 60), 160) AS snippet,
+               c.created_at
+        FROM \`${FRONT}.message\` m
+        JOIN \`${FRONT}.conversation\` c ON c.id = m.conversation_id
+        ${SALES_INBOX_FILTER}
+        WHERE LOWER(m.body) LIKE LOWER(CONCAT('%', @keyword, '%'))
+
+        UNION ALL
+
+        -- Match in quote_data
+        SELECT c.id AS conversation_id, c.subject, 'quote' AS match_source,
+               SUBSTR(CAST(q.quote_data AS STRING), GREATEST(1, STRPOS(LOWER(CAST(q.quote_data AS STRING)), LOWER(@keyword)) - 60), 160) AS snippet,
+               c.created_at
+        FROM \`${AI}.email_quote_requests\` q
+        JOIN \`${FRONT}.conversation\` c ON c.id = q.front_conversation_id
+        ${SALES_INBOX_FILTER}
+        WHERE LOWER(CAST(q.quote_data AS STRING)) LIKE LOWER(CONCAT('%', @keyword, '%'))
+      )
+      SELECT conversation_id, ANY_VALUE(subject) AS subject,
+             ARRAY_AGG(DISTINCT match_source) AS sources,
+             ANY_VALUE(snippet) AS snippet,
+             MAX(created_at) AS created_at
+      FROM matches
+      GROUP BY conversation_id
+      ORDER BY created_at DESC
+      LIMIT 50
+    `;
+
+    const rows = await runQuery(sql, { keyword });
+    res.json(rows.map(r => ({
+      conversation_id: r.conversation_id,
+      subject: r.subject || '(no subject)',
+      sources: r.sources || [],
+      snippet: (r.snippet || '').replace(/<[^>]*>/g, '').substring(0, 160),
+      created_at: r.created_at?.value || null,
+    })));
+  } catch (err) {
+    console.error('search error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 7. CSV Download ──────────────────────────────────────
 app.get('/api/download-conversations', async (req, res) => {
   try {
     const type = req.query.type || 'conversation-trend';
