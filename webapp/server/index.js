@@ -596,6 +596,18 @@ app.get('/api/search', async (req, res) => {
         JOIN \`${FRONT}.conversation\` c ON c.id = q.front_conversation_id
         ${SALES_INBOX_FILTER}
         WHERE LOWER(CAST(q.quote_data AS STRING)) LIKE LOWER(CONCAT('%', @keyword, '%'))
+
+        UNION ALL
+
+        -- Match in quote_request_number (QRN)
+        SELECT c.id AS conversation_id, c.subject, 'qrn' AS match_source,
+               CONCAT('QRN: ', q.quote_request_number) AS snippet,
+               c.created_at
+        FROM \`${AI}.email_quote_requests\` q
+        JOIN \`${FRONT}.conversation\` c ON c.id = q.front_conversation_id
+        ${SALES_INBOX_FILTER}
+        WHERE q.quote_request_number IS NOT NULL
+          AND LOWER(q.quote_request_number) LIKE LOWER(CONCAT('%', @keyword, '%'))
       )
       SELECT conversation_id, ANY_VALUE(subject) AS subject,
              ARRAY_AGG(DISTINCT match_source) AS sources,

@@ -588,7 +588,7 @@ document.getElementById('searchToggle').addEventListener('click', () => {
   searchModal.classList.add('flex');
   searchInput.value = '';
   searchInput.focus();
-  searchResults.innerHTML = '<div class="text-center text-sm text-slate-400 py-12">Type a keyword to search across conversations, messages, and quotes.</div>';
+  searchResults.innerHTML = '<div class="text-center text-sm text-slate-400 py-12">Type a keyword to search across conversations, messages, quotes, and QRN.</div>';
 });
 
 document.getElementById('searchBack').addEventListener('click', () => {
@@ -614,8 +614,8 @@ async function performSearch(q) {
       searchResults.innerHTML = '<div class="text-center text-sm text-slate-400 py-12">No results found.</div>';
       return;
     }
-    const SOURCE_LABELS = { subject: 'Subject', message: 'Message', quote: 'Quote' };
-    const SOURCE_COLORS = { subject: 'bg-primary/10 text-primary', message: 'bg-amber-100 text-amber-700', quote: 'bg-green-100 text-green-700' };
+    const SOURCE_LABELS = { subject: 'Subject', message: 'Message', quote: 'Quote', qrn: 'QRN' };
+    const SOURCE_COLORS = { subject: 'bg-primary/10 text-primary', message: 'bg-amber-100 text-amber-700', quote: 'bg-green-100 text-green-700', qrn: 'bg-violet-100 text-violet-700' };
 
     searchResults.innerHTML = `<p class="text-xs text-slate-400 mb-2">${data.length} result${data.length > 1 ? 's' : ''}</p>` +
       data.map(r => {
