@@ -23,7 +23,13 @@ const fbCredPaths = [
 ];
 let fbCred = null;
 for (const p of fbCredPaths) {
-  try { fbCred = JSON.parse(fs.readFileSync(p, 'utf8')); break; } catch {}
+  try {
+    fbCred = JSON.parse(fs.readFileSync(p, 'utf8'));
+    console.log(`Firebase credentials found at: ${p} (project: ${fbCred.project_id})`);
+    break;
+  } catch {
+    console.log(`Firebase credentials not found at: ${p}`);
+  }
 }
 
 if (fbCred && fbCred.project_id === 'front-report') {
