@@ -85,6 +85,29 @@ document.body.appendChild(loadingOverlay);
 function showLoading() { loadingOverlay.style.display = 'flex'; }
 function hideLoading() { loadingOverlay.style.display = 'none'; }
 
+// ─── Toast Notifications ─────────────────────────────
+const toastContainer = document.createElement('div');
+toastContainer.className = 'fixed top-16 left-1/2 -translate-x-1/2 z-[80] flex flex-col items-center gap-2 pointer-events-none';
+document.body.appendChild(toastContainer);
+
+function showToast(message, type = 'success') {
+  const colors = {
+    success: 'bg-accent-green text-white',
+    error: 'bg-red-500 text-white',
+    info: 'bg-primary text-white',
+  };
+  const icons = { success: 'check_circle', error: 'error', info: 'info' };
+  const toast = document.createElement('div');
+  toast.className = `flex items-center gap-2 px-4 py-3 rounded-xl shadow-lg text-sm font-semibold pointer-events-auto ${colors[type] || colors.info} opacity-0 translate-y-[-8px] transition-all duration-300`;
+  toast.innerHTML = `<span class="material-symbols-outlined text-lg">${icons[type] || icons.info}</span>${escHtml(message)}`;
+  toastContainer.appendChild(toast);
+  requestAnimationFrame(() => { toast.classList.remove('opacity-0', 'translate-y-[-8px]'); });
+  setTimeout(() => {
+    toast.classList.add('opacity-0', 'translate-y-[-8px]');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
 // ─── SPA Routing ─────────────────────────────────────
 function navigateTo(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -451,14 +474,18 @@ if (document.getElementById('closeScheduleModal')) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ teammate_id: teammateId, schedule })
       });
-      if (res.success || res.error) {
+      if (res.success) {
         teamSchedules[teammateId] = schedule;
         document.getElementById('closeScheduleModal').click();
+        showToast('Schedule saved successfully');
         loadAll();
+      } else {
+        showToast(res.error || 'Failed to save schedule', 'error');
       }
     } catch (err) {
-      alert('Failed to save schedule');
-      console.error(err);
+      console.error('Save schedule error:', err);
+      const msg = err.message === '503' ? 'Firestore not configured on server' : 'Failed to save schedule';
+      showToast(msg, 'error');
     } finally {
       btn.disabled = false;
       btn.innerHTML = `Save Changes`;
