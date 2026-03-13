@@ -18,6 +18,7 @@ const fs = await import('fs');
 // Try to find Firebase credentials for Firestore access
 const fbCredPaths = [
   path.resolve(__dirname, './firebase-credentials.json'),
+  '/etc/secrets/firebase-credentials.json',
   path.resolve(__dirname, './credentials.json'),
 ];
 let fbCred = null;
