@@ -57,13 +57,14 @@ function getDateRange(preset) {
 let currentRange = getDateRange('last-7');
 const API_BASE_URL = window.location.hostname === 'localhost' ? '' : 'https://front-report.onrender.com';
 const qs = () => `start=${currentRange.start.toISOString()}&end=${currentRange.end.toISOString()}`;
-const api = async (url, _retry) => {
-  const headers = {};
+const api = async (url, opts = {}, _retry) => {
+  const headers = { ...(opts.headers || {}) };
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
-  const r = await fetch(API_BASE_URL + url, { headers });
+  const fetchOpts = { ...opts, headers };
+  const r = await fetch(API_BASE_URL + url, fetchOpts);
   if (r.status === 401 && !_retry && currentUser) {
     idToken = await currentUser.getIdToken(true);
-    return api(url, true);
+    return api(url, opts, true);
   }
   if (!r.ok) throw new Error(r.status);
   return r.json();

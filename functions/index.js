@@ -22,6 +22,7 @@ try {
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 const bigquery = new BigQuery({
   keyFilename: path.resolve(__dirname, './credentials.json'),

@@ -9,6 +9,7 @@ import { calculateBusinessMinutes } from './businessHours.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 // ─── Firebase Admin ──────────────────────────────────────
 let firestoreDb = null;
