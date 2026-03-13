@@ -122,7 +122,7 @@ app.post('/api/team-schedules', async (req, res) => {
     await firestoreDb.collection('teammate_schedules').doc(String(teammate_id)).set(schedule);
     res.json({ success: true });
   } catch (err) {
-    console.error('post-schedules error:', err);
+    console.error('post-schedules error:', err.code, err.message, err.details || '');
     res.status(500).json({ error: err.message });
   }
 });

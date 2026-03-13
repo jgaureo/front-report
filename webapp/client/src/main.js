@@ -66,7 +66,11 @@ const api = async (url, opts = {}, _retry) => {
     idToken = await currentUser.getIdToken(true);
     return api(url, opts, true);
   }
-  if (!r.ok) throw new Error(r.status);
+  if (!r.ok) {
+    let msg = String(r.status);
+    try { const b = await r.json(); if (b.error) msg += ': ' + b.error; } catch {}
+    throw new Error(msg);
+  }
   return r.json();
 };
 
@@ -484,7 +488,7 @@ if (document.getElementById('closeScheduleModal')) {
       }
     } catch (err) {
       console.error('Save schedule error:', err);
-      const msg = err.message === '503' ? 'Firestore not configured on server' : 'Failed to save schedule';
+      const msg = err.message.startsWith('503') ? 'Firestore not configured on server' : 'Failed to save schedule: ' + err.message;
       showToast(msg, 'error');
     } finally {
       btn.disabled = false;
