@@ -19,6 +19,7 @@ const fs = await import('fs');
 const fbCredPaths = [
   path.resolve(__dirname, './firebase-credentials.json'),
   '/etc/secrets/firebase-credentials.json',
+  '/etc/secrets/firestore-credentials.json',
   path.resolve(__dirname, './credentials.json'),
 ];
 let fbCred = null;
