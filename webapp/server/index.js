@@ -88,14 +88,11 @@ const ZERO_REPLIES_TAG_ID = 'tag_6si6eg';
  */
 async function fetchPendingReplies() {
   const results = [];
-  // Start URL — filter by inbox, tag, and both open statuses in one call
-  let url =
-    `${FRONT_API_BASE}/conversations` +
-    `?inbox_id=${SALES_INBOX_ID}` +
-    `&tag_id=${ZERO_REPLIES_TAG_ID}` +
-    `&q[statuses][]=assigned` +
-    `&q[statuses][]=unassigned` +
-    `&limit=100`;
+  // Front search syntax: filter by inbox, tag, and both open statuses in one call
+  const searchQuery = encodeURIComponent(
+    `inbox:${SALES_INBOX_ID} tag:${ZERO_REPLIES_TAG_ID} is:assigned is:unassigned`
+  );
+  let url = `${FRONT_API_BASE}/conversations/search/${searchQuery}?limit=100`;
 
   while (url) {
     const resp = await fetch(url, {
