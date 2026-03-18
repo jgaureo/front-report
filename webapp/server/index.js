@@ -109,8 +109,8 @@ async function fetchPendingReplies() {
 
   // Run both searches in parallel
   const [assigned, unassigned] = await Promise.all([
-    fetchAll(`${baseQ} is:assigned`),
-    fetchAll(`${baseQ} is:unassigned`),
+    fetchAll(`${baseQ} is:assigned is:open`),
+    fetchAll(`${baseQ} is:unassigned is:open`),
   ]);
 
   // Merge and deduplicate by ID
