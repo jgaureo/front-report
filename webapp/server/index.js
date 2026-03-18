@@ -75,6 +75,70 @@ const FRONT = `${PROJECT}.front`;
 const AI = `${PROJECT}.sm_stage_ai`;
 const TZ = 'America/Los_Angeles';
 
+// ─── Front API Helper ────────────────────────────────────
+const FRONT_TOKEN         = process.env.FRONT_API_TOKEN;
+const FRONT_API_BASE      = 'https://api2.frontapp.com';
+const SALES_INBOX_ID      = 'inb_kkq08';
+const ZERO_REPLIES_TAG_ID = 'tag_6si6eg';
+
+/**
+ * Fetch ALL open (assigned + unassigned) conversations in the Sales Team inbox
+ * that carry the zero-replies tag, following pagination automatically.
+ * Returns a flat array of mapped objects matching the shape the frontend expects.
+ */
+async function fetchPendingReplies() {
+  const results = [];
+  // Start URL — filter by inbox, tag, and both open statuses in one call
+  let url =
+    `${FRONT_API_BASE}/conversations` +
+    `?inbox_id=${SALES_INBOX_ID}` +
+    `&tag_id=${ZERO_REPLIES_TAG_ID}` +
+    `&q[statuses][]=assigned` +
+    `&q[statuses][]=unassigned` +
+    `&limit=100`;
+
+  while (url) {
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${FRONT_TOKEN}` }
+    });
+    if (!resp.ok) throw new Error(`Front API ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
+
+    for (const conv of (data._results || data.results || [])) {
+      const assignee    = conv.assignee;
+      const firstName   = assignee?.first_name || '';
+      const lastName    = assignee?.last_name  || '';
+      const teammate    = firstName || lastName ? `${firstName} ${lastName}`.trim() : '—';
+      const createdMs   = (conv.created_at || 0) * 1000;
+      const createdDate = new Date(createdMs).toLocaleString('en-US', {
+        month: 'short', day: '2-digit', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', hour12: true,
+        timeZone: 'America/Los_Angeles'
+      }) + ' PST';
+      const ageHours    = Math.floor((Date.now() - createdMs) / 3_600_000);
+      const tags        = (conv.tags || []).map(t => t.name).join(', ');
+
+      results.push({
+        conversation_id: conv.id,
+        teammate,
+        first_name: firstName,
+        last_name:  lastName,
+        created_date: createdDate,
+        age_hours:    ageHours,
+        subject:      conv.subject || '',
+        tags
+      });
+    }
+
+    // Follow pagination cursor if present
+    url = data._pagination?.next || null;
+  }
+
+  // Sort oldest first (same as original BigQuery ORDER BY c.created_at ASC)
+  results.sort((a, b) => a.age_hours - b.age_hours);
+  return results;
+}
+
 // Reusable Sales Team inbox filter subquery
 const SALES_INBOX_FILTER = `
   INNER JOIN \`${FRONT}.conversation_inbox\` ci_sales ON ci_sales.conversation_id = c.id
@@ -480,42 +544,11 @@ app.get('/api/team-performance', async (req, res) => {
   }
 });
 
-// ─── 4. Pending Replies (Zero Replies) ────────────────────
+// ─── 4. Pending Replies (Zero Replies) — Front.com API ───
 app.get('/api/zero-replies-conversations', async (req, res) => {
   try {
-    const sql = `
-      SELECT
-        c.id AS conversation_id,
-        COALESCE(CONCAT(tm.first_name, ' ', tm.last_name), '—') AS teammate,
-        tm.first_name,
-        tm.last_name,
-        FORMAT_TIMESTAMP('%b %d, %Y %I:%M %p PST', c.created_at, '${TZ}') AS created_date,
-        TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), c.created_at, HOUR) AS age_hours,
-        c.subject,
-        STRING_AGG(DISTINCT t2.name, ', ' ORDER BY t2.name) AS tags
-      FROM \`${FRONT}.conversation\` c
-      INNER JOIN \`${FRONT}.conversation_tag\` ct_zr ON ct_zr.conversation_id = c.id
-      INNER JOIN \`${FRONT}.tag\` t_zr ON t_zr.id = ct_zr.tag_id AND LOWER(t_zr.name) = 'zero-replies'
-      INNER JOIN \`${FRONT}.conversation_inbox\` ci ON ci.conversation_id = c.id
-      INNER JOIN \`${FRONT}.inbox\` ib ON ib.id = ci.inbox_id AND LOWER(ib.name) = 'sales team'
-      LEFT JOIN \`${FRONT}.teammate\` tm ON tm.id = c.teammate_id
-      LEFT JOIN \`${FRONT}.conversation_tag\` ct2 ON ct2.conversation_id = c.id
-      LEFT JOIN \`${FRONT}.tag\` t2 ON t2.id = ct2.tag_id
-      WHERE c.status IN ('assigned', 'unassigned')
-      GROUP BY c.id, tm.first_name, tm.last_name, c.created_at, c.subject
-      ORDER BY c.created_at ASC
-    `;
-    const rows = await runQuery(sql);
-    res.json(rows.map(r => ({
-      conversation_id: r.conversation_id,
-      teammate: r.teammate,
-      first_name: r.first_name || '',
-      last_name: r.last_name || '',
-      created_date: r.created_date,
-      age_hours: Number(r.age_hours),
-      subject: r.subject,
-      tags: r.tags || ''
-    })));
+    const rows = await fetchPendingReplies();
+    res.json(rows);
   } catch (err) {
     console.error('zero-replies error:', err);
     res.status(500).json({ error: err.message });
@@ -650,11 +683,7 @@ app.get('/api/download-conversations', async (req, res) => {
           AND updated_at >= TIMESTAMP(@start) AND updated_at <= TIMESTAMP(@end)
       )`;
     } else if (type === 'pending-replies') {
-      whereClause = `WHERE c.id IN (
-        SELECT ct_zr.conversation_id
-        FROM \`${FRONT}.conversation_tag\` ct_zr
-        JOIN \`${FRONT}.tag\` t_zr ON t_zr.id = ct_zr.tag_id AND LOWER(t_zr.name) = 'zero-replies'
-      ) AND c.status IN ('assigned','unassigned')`;
+      // Handled separately below via Front.com API — not BigQuery
     }
 
     const sql = `
@@ -675,8 +704,29 @@ app.get('/api/download-conversations', async (req, res) => {
       ORDER BY c.created_at DESC
     `;
 
-    const params = type === 'pending-replies' ? {} : { start: startStr, end: endStr };
-    const rows = await runQuery(sql, params);
+    // ── Pending Replies CSV: sourced from Front.com API, not BigQuery ──
+    if (type === 'pending-replies') {
+      const convs = await fetchPendingReplies();
+      const headers = ['Conversation ID', 'Teammate', 'Created Date', 'Age (hrs)', 'Subject', 'Tags'];
+      const csvRows = [headers.join(',')];
+      for (const r of convs) {
+        const vals = [
+          r.conversation_id,
+          r.teammate,
+          r.created_date,
+          r.age_hours,
+          r.subject,
+          r.tags
+        ].map(v => `"${String(v || '').replace(/"/g, '""')}"`);
+        csvRows.push(vals.join(','));
+      }
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', 'attachment; filename="pending-replies.csv"');
+      return res.send(csvRows.join('\n'));
+    }
+
+    // ── All other types: BigQuery ──
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
 
     const headers = ['Conversation ID', 'Teammate', 'Created Date', 'Age', 'Subject', 'Tags', 'Status'];
     const csvRows = [headers.join(',')];

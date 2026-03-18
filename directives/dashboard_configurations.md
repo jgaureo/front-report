@@ -253,42 +253,48 @@ Shows date and both values:
 ### Endpoint
 `GET /api/zero-replies-conversations` (no date params)
 
+### Data Source
+**Front.com REST API** (real-time) — migrated from BigQuery on 2026-03-18.
+No more 6-hour lag; data reflects Front.com current state at request time.
+
+### Front API Call
+```
+GET https://api2.frontapp.com/conversations
+  ?inbox_id=inb_kkq08          # Sales Team inbox
+  &tag_id=tag_6si6eg           # zero-replies tag
+  &q[statuses][]=assigned
+  &q[statuses][]=unassigned
+  &limit=100
+```
+Pagination: follows `_pagination.next` until exhausted.
+Token: stored in `.env` as `FRONT_API_TOKEN`.
+
 ### Date Filtered
 No — live current state view
 
 ### Visual
 Table with 6 columns
 
-### BigQuery Tables
-- `front.conversation` — main table
-- `front.conversation_tag` + `front.tag` — filter by `zero-replies` tag + aggregate all tags
-- `front.conversation_inbox` + `front.inbox` — filter to `'sales team'` inbox
-- `front.teammate` — names
-
-### Filters
-1. INNER JOIN to tag where `LOWER(name) = 'zero-replies'`
-2. INNER JOIN to inbox where `LOWER(name) = 'sales team'`
-3. `c.status IN ('assigned', 'unassigned')` — only open conversations
-
 ### Columns
 
 | Column | Field / Formula | Display |
 |---|---|---|
-| Teammate | `COALESCE(CONCAT(tm.first_name, ' ', tm.last_name), '—')` | Avatar + name |
-| Created Date | `FORMAT_TIMESTAMP('%b %d, %Y', c.created_at, 'America/Los_Angeles')` | e.g., "Mar 06, 2026" |
-| Age | `TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), c.created_at, DAY)` | Displayed as `Xh` (`age_days * 24`) |
-| Subject | `c.subject` | Truncated via CSS (max-width 320px, ellipsis) |
-| Tags | `STRING_AGG(DISTINCT t2.name, ', ' ORDER BY t2.name)` | All tags, compact badges, wrapped |
-| Conversation ID | `c.id` | Monospace font |
+| Teammate | `conv.assignee.first_name + last_name` or `—` | Avatar + name |
+| Created Date | `new Date(conv.created_at * 1000).toLocaleString(...)` formatted in America/Los_Angeles | e.g., "Mar 06, 2026 08:30 AM PST" |
+| Age | `Math.floor((Date.now() - createdMs) / 3_600_000)` | Displayed as `Xh` |
+| Subject | `conv.subject` | Truncated via CSS (max-width 320px, ellipsis) |
+| Tags | `conv.tags.map(t => t.name).join(', ')` | All tags, compact badges, wrapped |
+| Conversation ID | `conv.id` | Monospace font |
 
 ### Sorting
-`c.created_at ASC` (oldest first)
+`age_hours ASC` (oldest first)
 
 ### Download
 - Button: top-right of panel header
 - Download type: `pending-replies`
-- Filter: same as display — zero-replies tag + open status, NO date range
+- Source: Front.com API (same `fetchPendingReplies()` function)
 - Filename: `pending-replies.csv`
+- Columns: Conversation ID, Teammate, Created Date, Age (hrs), Subject, Tags
 
 ---
 
@@ -331,12 +337,12 @@ Table with 6 columns
 
 ### Download Buttons Summary
 
-| Location | Position | Type Param | Date Filtered | Filename |
-|---|---|---|---|---|
-| Conversation Overview (sidebar) | Next to section title | `conversation-trend` | Yes | `conversation-overview.csv` |
-| Team Assignments (panel) | Panel header right | `team-assignments` | Yes | `team-assignments.csv` |
-| Conversation Trend (panel) | Panel header right | `conversation-trend` | Yes | `conversation-trend.csv` |
-| Pending Replies (panel) | Panel header right | `pending-replies` | No | `pending-replies.csv` |
+| Location | Position | Type Param | Date Filtered | Source | Filename |
+|---|---|---|---|---|---|
+| Conversation Overview (sidebar) | Next to section title | `conversation-trend` | Yes | BigQuery | `conversation-overview.csv` |
+| Team Assignments (panel) | Panel header right | `team-assignments` | Yes | BigQuery | `team-assignments.csv` |
+| Conversation Trend (panel) | Panel header right | `conversation-trend` | Yes | BigQuery | `conversation-trend.csv` |
+| Pending Replies (panel) | Panel header right | `pending-replies` | No | **Front.com API** | `pending-replies.csv` |
 
 ---
 
