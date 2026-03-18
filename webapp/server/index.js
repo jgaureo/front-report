@@ -84,55 +84,73 @@ const ZERO_REPLIES_TAG_ID = 'tag_6si6eg';
 /**
  * Fetch ALL open (assigned + unassigned) conversations in the Sales Team inbox
  * that carry the zero-replies tag, following pagination automatically.
- * Returns a flat array of mapped objects matching the shape the frontend expects.
+ *
+ * Front search treats multiple "is:" clauses as AND, so we run two searches
+ * (is:assigned and is:unassigned) and merge the results.
  */
 async function fetchPendingReplies() {
-  const results = [];
-  // Front search syntax: filter by inbox, tag, and both open statuses in one call
-  const searchQuery = encodeURIComponent(
-    `inbox:${SALES_INBOX_ID} tag:${ZERO_REPLIES_TAG_ID} is:assigned is:unassigned`
-  );
-  let url = `${FRONT_API_BASE}/conversations/search/${searchQuery}?limit=100`;
+  const baseQ = `inbox:${SALES_INBOX_ID} tag:${ZERO_REPLIES_TAG_ID}`;
 
-  while (url) {
-    const resp = await fetch(url, {
-      headers: { Authorization: `Bearer ${FRONT_TOKEN}` }
-    });
-    if (!resp.ok) throw new Error(`Front API ${resp.status}: ${await resp.text()}`);
-    const data = await resp.json();
-
-    for (const conv of (data._results || data.results || [])) {
-      const assignee    = conv.assignee;
-      const firstName   = assignee?.first_name || '';
-      const lastName    = assignee?.last_name  || '';
-      const teammate    = firstName || lastName ? `${firstName} ${lastName}`.trim() : '—';
-      const createdMs   = (conv.created_at || 0) * 1000;
-      const createdDate = new Date(createdMs).toLocaleString('en-US', {
-        month: 'short', day: '2-digit', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', hour12: true,
-        timeZone: 'America/Los_Angeles'
-      }) + ' PST';
-      const ageHours    = Math.floor((Date.now() - createdMs) / 3_600_000);
-      const tags        = (conv.tags || []).map(t => t.name).join(', ');
-
-      results.push({
-        conversation_id: conv.id,
-        teammate,
-        first_name: firstName,
-        last_name:  lastName,
-        created_date: createdDate,
-        age_hours:    ageHours,
-        subject:      conv.subject || '',
-        tags
+  // Paginated fetch helper for a single search query
+  async function fetchAll(query) {
+    const results = [];
+    let url = `${FRONT_API_BASE}/conversations/search/${encodeURIComponent(query)}?limit=100`;
+    while (url) {
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${FRONT_TOKEN}` }
       });
+      if (!resp.ok) throw new Error(`Front API ${resp.status}: ${await resp.text()}`);
+      const data = await resp.json();
+      for (const conv of (data._results || [])) results.push(conv);
+      url = data._pagination?.next || null;
     }
-
-    // Follow pagination cursor if present
-    url = data._pagination?.next || null;
+    return results;
   }
 
+  // Run both searches in parallel
+  const [assigned, unassigned] = await Promise.all([
+    fetchAll(`${baseQ} is:assigned`),
+    fetchAll(`${baseQ} is:unassigned`),
+  ]);
+
+  // Merge and deduplicate by ID
+  const seen = new Set();
+  const merged = [];
+  for (const conv of [...assigned, ...unassigned]) {
+    if (seen.has(conv.id)) continue;
+    seen.add(conv.id);
+    merged.push(conv);
+  }
+
+  // Map to the shape the frontend expects
+  const results = merged.map(conv => {
+    const assignee    = conv.assignee;
+    const firstName   = assignee?.first_name || '';
+    const lastName    = assignee?.last_name  || '';
+    const teammate    = firstName || lastName ? `${firstName} ${lastName}`.trim() : '—';
+    const createdMs   = (conv.created_at || 0) * 1000;
+    const createdDate = new Date(createdMs).toLocaleString('en-US', {
+      month: 'short', day: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+      timeZone: 'America/Los_Angeles'
+    }) + ' PST';
+    const ageHours    = Math.floor((Date.now() - createdMs) / 3_600_000);
+    const tags        = (conv.tags || []).map(t => t.name).join(', ');
+
+    return {
+      conversation_id: conv.id,
+      teammate,
+      first_name: firstName,
+      last_name:  lastName,
+      created_date: createdDate,
+      age_hours:    ageHours,
+      subject:      conv.subject || '',
+      tags
+    };
+  });
+
   // Sort oldest first (same as original BigQuery ORDER BY c.created_at ASC)
-  results.sort((a, b) => a.age_hours - b.age_hours);
+  results.sort((a, b) => b.age_hours - a.age_hours);
   return results;
 }
 
