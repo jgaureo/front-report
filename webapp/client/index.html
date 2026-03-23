@@ -205,29 +205,29 @@
           <table class="min-w-full divide-y divide-slate-100">
             <thead class="bg-slate-50/50">
               <tr>
-                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Teammate</th>
-                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip">
-                  Assigned ↓
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap cursor-pointer hover:text-primary transition-colors" data-sort="name">Teammate <span class="sort-arrow"></span></th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="assigned_conversations">
+                  Assigned <span class="sort-arrow">↓</span>
                   <div class="tip-content"><div class="tip-title">Assigned conversations</div>Conversations with activity this period while this teammate was the assignee.</div>
                 </th>
-                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip">
-                  Touched
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="touched_conversations">
+                  Touched <span class="sort-arrow"></span>
                   <div class="tip-content"><div class="tip-title">Touched conversations</div>Conversations with an action taken by this teammate (applied a tag, sent a message, commented, etc).</div>
                 </th>
-                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip">
-                  Messages
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="messages_sent">
+                  Messages <span class="sort-arrow"></span>
                   <div class="tip-content"><div class="tip-title">Messages sent</div>Total number of outbound messages sent during the time period.</div>
                 </th>
-                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip">
-                  Replies
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="replies_sent">
+                  Replies <span class="sort-arrow"></span>
                   <div class="tip-content"><div class="tip-title">Replies sent</div>Outbound messages sent by your teammates in reply to an inbound message.</div>
                 </th>
-                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap col-tip">
-                  Avg Reply
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap col-tip cursor-pointer hover:text-primary transition-colors" data-sort="avg_reply_minutes">
+                  Avg Reply <span class="sort-arrow"></span>
                   <div class="tip-content"><div class="tip-title">Reply time (avg)</div>Time between receiving an inbound message and sending an outbound reply in a given conversation segment. Takes business hours and shifts into consideration.</div>
                 </th>
-                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap col-tip">
-                  Avg 1st Reply
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap col-tip cursor-pointer hover:text-primary transition-colors" data-sort="avg_first_reply_minutes">
+                  Avg 1st Reply <span class="sort-arrow"></span>
                   <div class="tip-content"><div class="tip-title">First reply time (avg)</div>Time between receiving the first inbound message and sending the first outbound reply in a given conversation segment. Takes business hours and shifts into consideration.</div>
                 </th>
               </tr>

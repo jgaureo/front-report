@@ -315,11 +315,42 @@ function renderTopAccounts(data) {
 }
 
 // ─── Render: Team Performance Table ─────────────────
-function renderTeam(data) {
-  const tbody = document.getElementById('teamBody');
-  if (!data || !data.length) { tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-xs text-slate-400">No data</td></tr>'; return; }
+let teamData = [];
+let teamSortKey = 'assigned_conversations';
+let teamSortAsc = false;
 
-  tbody.innerHTML = data.map(tm => {
+function sortTeamData() {
+  const sorted = [...teamData];
+  sorted.sort((a, b) => {
+    let va = a[teamSortKey], vb = b[teamSortKey];
+    if (teamSortKey === 'name') {
+      va = (va || '').toLowerCase(); vb = (vb || '').toLowerCase();
+      return teamSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+    }
+    return teamSortAsc ? va - vb : vb - va;
+  });
+  return sorted;
+}
+
+function updateSortArrows() {
+  document.querySelectorAll('th[data-sort]').forEach(th => {
+    const arrow = th.querySelector('.sort-arrow');
+    if (th.dataset.sort === teamSortKey) {
+      arrow.textContent = teamSortAsc ? '↑' : '↓';
+    } else {
+      arrow.textContent = '';
+    }
+  });
+}
+
+function renderTeam(data) {
+  if (data) teamData = data;
+  const tbody = document.getElementById('teamBody');
+  if (!teamData || !teamData.length) { tbody.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-center text-xs text-slate-400">No data</td></tr>'; return; }
+
+  const sorted = sortTeamData();
+  updateSortArrows();
+  tbody.innerHTML = sorted.map(tm => {
     const ini = initials(tm.first_name, tm.last_name);
     const c = avatarColor(tm.name);
     return `<tr>
@@ -537,6 +568,20 @@ document.getElementById('applyCustom').addEventListener('click', () => {
     currentRange = { start: new Date(s + 'T00:00:00'), end: new Date(e + 'T23:59:59.999') };
     loadAll();
   }
+});
+
+// ─── Team Performance Sort ───────────────────────────
+document.querySelectorAll('th[data-sort]').forEach(th => {
+  th.addEventListener('click', () => {
+    const key = th.dataset.sort;
+    if (teamSortKey === key) {
+      teamSortAsc = !teamSortAsc;
+    } else {
+      teamSortKey = key;
+      teamSortAsc = key === 'name';
+    }
+    renderTeam();
+  });
 });
 
 // ─── Theme Toggle ────────────────────────────────────
