@@ -124,9 +124,9 @@ function navigateTo(page) {
     if (icon) icon.style.fontVariationSettings = isActive ? "'FILL' 1" : "'FILL' 0";
   });
 
-  // Show date picker only on dashboard
+  // Show date picker only on pricing-dashboard and management-dashboard
   const dp = document.getElementById('datePreset');
-  if (dp) dp.style.display = page === 'dashboard' ? '' : 'none';
+  if (dp) dp.style.display = (page === 'pricing-dashboard' || page === 'management-dashboard') ? '' : 'none';
 }
 
 document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -426,6 +426,15 @@ function renderTeamDirectory(data) {
   }).join('');
 }
 
+// ─── Render: Management Dashboard KPIs ──────────────
+function renderManagementKPIs(data) {
+  document.getElementById('mgmt-total-conv').textContent = (data.total_conversations || 0).toLocaleString();
+  document.getElementById('mgmt-won-conv').textContent = (data.won_conversations || 0).toLocaleString();
+  document.getElementById('mgmt-lost-conv').textContent = (data.lost_conversations || 0).toLocaleString();
+  const winRate = data.win_rate != null ? data.win_rate.toFixed(2) + '%' : '0%';
+  document.getElementById('mgmt-win-rate').textContent = winRate;
+}
+
 // ─── Shift Schedule Logic ─────────────────────────────────
 const scheduleModal = document.getElementById('scheduleModal');
 
@@ -597,13 +606,14 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts, schedules] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules, mgmtKpis] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
       api('/api/zero-replies-conversations'),
       api(`/api/top-accounts?${q}`),
       api(`/api/team-schedules`),
+      api(`/api/management-kpis?${q}`),
     ]);
 
     teamSchedules = schedules || {};
@@ -615,6 +625,7 @@ async function loadAll() {
     renderPending(pending);
     renderTopAccounts(accounts);
     renderTeamDirectory(team);
+    renderManagementKPIs(mgmtKpis);
   } catch (err) {
     console.error('Load error:', err);
   } finally {
@@ -751,7 +762,7 @@ auth.onAuthStateChanged(async (user) => {
     idToken = await user.getIdToken();
     updateAuthUI(user);
     loginOverlay.style.display = 'none';
-    navigateTo('dashboard');
+    navigateTo('pricing-dashboard');
     loadAll();
   } else {
     currentUser = null;

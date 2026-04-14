@@ -608,7 +608,52 @@ app.get('/api/top-accounts', async (req, res) => {
   }
 });
 
-// ─── 6. Global Search ────────────────────────────────────
+// ─── 6. Management KPIs ──────────────────────────────────
+app.get('/api/management-kpis', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const sql = `
+      WITH base AS (
+        SELECT
+          c.id,
+          q.quote_request_number AS qrn,
+          MAX(CASE WHEN LOWER(t.name) = 'won' THEN 1 ELSE 0 END) AS is_won,
+          MAX(CASE WHEN LOWER(t.name) = 'lost' THEN 1 ELSE 0 END) AS is_lost
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
+        LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+          AND q.quote_request_number IS NOT NULL
+        GROUP BY c.id, q.quote_request_number
+      )
+      SELECT
+        COUNT(DISTINCT qrn) AS total_conversations,
+        COUNT(DISTINCT CASE WHEN is_won = 1 THEN qrn END) AS won_conversations,
+        COUNT(DISTINCT CASE WHEN is_lost = 1 THEN qrn END) AS lost_conversations
+      FROM base
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+    const r = rows[0] || {};
+    const total = Number(r.total_conversations || 0);
+    const won = Number(r.won_conversations || 0);
+    const lost = Number(r.lost_conversations || 0);
+    const winRate = (won + lost) > 0 ? (won / (won + lost)) * 100 : 0;
+
+    res.json({
+      total_conversations: total,
+      won_conversations: won,
+      lost_conversations: lost,
+      win_rate: winRate,
+    });
+  } catch (err) {
+    console.error('management-kpis error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 7. Global Search ────────────────────────────────────
 app.get('/api/search', async (req, res) => {
   try {
     const keyword = (req.query.q || '').trim();
@@ -681,7 +726,7 @@ app.get('/api/search', async (req, res) => {
   }
 });
 
-// ─── 7. CSV Download ──────────────────────────────────────
+// ─── 8. CSV Download ──────────────────────────────────────
 app.get('/api/download-conversations', async (req, res) => {
   try {
     const type = req.query.type || 'conversation-trend';
