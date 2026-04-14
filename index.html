@@ -55,7 +55,7 @@
     .col-tip .tip-content .tip-title { font-weight: 700; font-size: 12px; margin-bottom: 2px; }
     .col-tip:hover .tip-content { display: block; }
   </style>
-  <script type="module" crossorigin src="./assets/index-DPz5YN9O.js"></script>
+  <script type="module" crossorigin src="./assets/index-BtDRvzbr.js"></script>
 </head>
 <body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display min-h-screen pb-48">
 
@@ -112,8 +112,8 @@
     <button id="applyCustom" class="text-xs font-bold text-white bg-accent-green px-3 py-1 rounded-lg">Apply</button>
   </div>
 
-  <!-- ═══════ PAGE: DASHBOARD ═══════ -->
-  <main id="page-dashboard" class="page active p-4 space-y-6">
+  <!-- ═══════ PAGE: PRICING DASHBOARD ═══════ -->
+  <main id="page-pricing-dashboard" class="page active p-4 space-y-6">
 
     <!-- KPI Cards -->
     <div class="grid grid-cols-2 gap-3" id="kpiCards">
@@ -266,6 +266,35 @@
 
   </main>
 
+  <!-- ═══════ PAGE: MANAGEMENT DASHBOARD ═══════ -->
+  <main id="page-management-dashboard" class="page p-4 space-y-6">
+    <h2 class="text-xl font-extrabold text-slate-900 dark:text-slate-100">Management Dashboard</h2>
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-2 gap-3" id="mgmtKpiCards">
+      <!-- Total Conversations -->
+      <div class="p-5 rounded-xl shadow-sm" style="background: linear-gradient(135deg, #3b5998 0%, #2b4070 100%);">
+        <p class="text-[10px] font-bold text-white/70 uppercase tracking-widest">Total Conversations</p>
+        <p class="text-3xl font-extrabold text-white mt-1" id="mgmt-total-conv">—</p>
+      </div>
+      <!-- Won Conversations -->
+      <div class="p-5 rounded-xl shadow-sm" style="background: linear-gradient(135deg, #5b7ebf 0%, #4a6aa0 100%);">
+        <p class="text-[10px] font-bold text-white/70 uppercase tracking-widest">Won Conversations</p>
+        <p class="text-3xl font-extrabold mt-1" style="color: #73be4b;" id="mgmt-won-conv">—</p>
+      </div>
+      <!-- Lost Conversations -->
+      <div class="p-5 rounded-xl shadow-sm" style="background: linear-gradient(135deg, #5b7ebf 0%, #4a6aa0 100%);">
+        <p class="text-[10px] font-bold text-white/70 uppercase tracking-widest">Lost Conversations</p>
+        <p class="text-3xl font-extrabold mt-1" style="color: #e53e3e;" id="mgmt-lost-conv">—</p>
+      </div>
+      <!-- Win Rate -->
+      <div class="p-5 rounded-xl shadow-sm" style="background: linear-gradient(135deg, #73be4b 0%, #5aa035 100%);">
+        <p class="text-[10px] font-bold text-white/70 uppercase tracking-widest">Win Rate</p>
+        <p class="text-3xl font-extrabold text-white mt-1" id="mgmt-win-rate">—</p>
+      </div>
+    </div>
+  </main>
+
   <!-- ═══════ PAGE: TEAMS ═══════ -->
   <main id="page-teams" class="page flex-1 overflow-y-auto px-4 pb-24">
     <div class="flex items-center justify-between py-4">
@@ -367,9 +396,13 @@
   <!-- ═══════ BOTTOM NAV ═══════ -->
   <nav class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-primary/5 z-50">
     <div class="px-6 py-3 flex items-center justify-between max-w-md mx-auto">
-      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-primary" data-page="dashboard">
+      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-primary" data-page="pricing-dashboard">
         <span class="material-symbols-outlined fill-[1]">dashboard</span>
-        <span class="text-[9px] font-bold uppercase tracking-tight">Dashboard</span>
+        <span class="text-[9px] font-bold uppercase tracking-tight">Pricing</span>
+      </a>
+      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-slate-400" data-page="management-dashboard">
+        <span class="material-symbols-outlined">admin_panel_settings</span>
+        <span class="text-[9px] font-bold uppercase tracking-tight">Management</span>
       </a>
       <a href="#" class="nav-tab flex flex-col items-center gap-1 text-slate-400" data-page="teams">
         <span class="material-symbols-outlined">group</span>
