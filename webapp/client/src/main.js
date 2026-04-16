@@ -831,7 +831,7 @@ async function loadAll() {
       api(`/api/team-schedules`),
       api(`/api/management-kpis?${q}`),
       api(`/api/management-win-rate?${q}`),
-      api(`/api/management-freight-breakdown?${q}`),
+      api(`/api/management-freight-breakdown?${q}`).catch(() => null),
     ]);
 
     teamSchedules = schedules || {};
