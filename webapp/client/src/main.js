@@ -586,7 +586,7 @@ function renderFreightBreakdown(data) {
   ).join('');
 
   container.innerHTML = `
-    <div class="grid grid-cols-5 gap-2 mb-4">${cards}</div>
+    <div class="grid grid-cols-4 gap-2 mb-4">${cards}</div>
     <div class="overflow-x-auto">
       <table class="w-full text-left border-collapse">
         <thead>

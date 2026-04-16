@@ -742,8 +742,8 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
             END AS mode_label,
             is_won, is_lost
           FROM per_conv
-          WHERE direction IN ('import','export','domestic','customs','crosstrade')
-        )
+          WHERE direction IN ('import','export','domestic','crosstrade')
+        ) sub
         GROUP BY direction, mode_label
       )
       SELECT direction, mode_label, total, won, lost
@@ -757,7 +757,6 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
       { key: 'import',     label: 'Import' },
       { key: 'export',     label: 'Export' },
       { key: 'domestic',   label: 'Domestic' },
-      { key: 'customs',    label: 'Customs' },
       { key: 'crosstrade', label: 'Cross-Trade' },
     ];
 
