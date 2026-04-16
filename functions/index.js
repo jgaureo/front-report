@@ -485,6 +485,47 @@ app.get('/api/top-accounts', async (req, res) => {
   }
 });
 
+app.get('/api/management-win-rate', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const sql = `
+      WITH base AS (
+        SELECT
+          DATE(c.created_at, 'America/Los_Angeles') AS day,
+          q.quote_request_number AS qrn,
+          MAX(CASE WHEN LOWER(t.name) = 'won'  THEN 1 ELSE 0 END) AS is_won,
+          MAX(CASE WHEN LOWER(t.name) = 'lost' THEN 1 ELSE 0 END) AS is_lost
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
+        LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+          AND q.quote_request_number IS NOT NULL
+        GROUP BY 1, 2
+      )
+      SELECT
+        CAST(day AS STRING) AS day,
+        COUNT(DISTINCT qrn)                                    AS total,
+        COUNT(DISTINCT CASE WHEN is_won  = 1 THEN qrn END)    AS won,
+        COUNT(DISTINCT CASE WHEN is_lost = 1 THEN qrn END)    AS lost
+      FROM base
+      GROUP BY day
+      ORDER BY day
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+    res.json(rows.map(r => ({
+      day:   r.day,
+      total: Number(r.total),
+      won:   Number(r.won),
+      lost:  Number(r.lost),
+    })));
+  } catch (err) {
+    console.error('management-win-rate error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/download-conversations', async (req, res) => {
   try {
     const type = req.query.type || 'conversation-trend';

@@ -435,6 +435,104 @@ function renderManagementKPIs(data) {
   document.getElementById('mgmt-win-rate').textContent = winRate;
 }
 
+// ─── Render: Win Rate Chart ──────────────────────────
+function renderWinRateChart(data) {
+  const svg = document.getElementById('winRateChart');
+  const tooltip = document.getElementById('winRateTooltip');
+  svg.innerHTML = '';
+  if (!data || !data.length) {
+    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#9CA3AF" font-size="12">No data</text>';
+    return;
+  }
+
+  const W = svg.getBoundingClientRect().width || 600;
+  const H = 200;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const pad = { t: 16, r: 16, b: 32, l: 40 };
+  const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+
+  const maxV = Math.max(...data.map(d => Math.max(d.won, d.lost)), 1);
+  const xS = data.length > 1 ? cw / (data.length - 1) : cw / 2;
+  const x = i => pad.l + i * xS;
+  const y = v => pad.t + ch - (v / maxV) * ch;
+
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // Grid lines + Y labels
+  for (let i = 0; i <= 4; i++) {
+    const yy = pad.t + (ch / 4) * i;
+    const line = document.createElementNS(ns, 'line');
+    Object.entries({ x1: pad.l, x2: W - pad.r, y1: yy, y2: yy, stroke: '#F3F4F6', 'stroke-width': 1 }).forEach(([k, v]) => line.setAttribute(k, v));
+    svg.appendChild(line);
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', pad.l - 6); lbl.setAttribute('y', yy + 3);
+    lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('fill', '#9CA3AF'); lbl.setAttribute('font-size', '9');
+    lbl.textContent = Math.round(maxV - (maxV / 4) * i);
+    svg.appendChild(lbl);
+  }
+
+  // X-axis date labels
+  const step = Math.max(1, Math.floor(data.length / 7));
+  data.forEach((d, i) => {
+    if (i % step !== 0 && i !== data.length - 1) return;
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', x(i)); lbl.setAttribute('y', H - 6);
+    lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('fill', '#9CA3AF'); lbl.setAttribute('font-size', '9');
+    const dt = new Date(d.day + 'T00:00:00');
+    lbl.textContent = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    svg.appendChild(lbl);
+  });
+
+  // Draw line helper
+  function drawLine(key, lineColor, fillColor) {
+    let aD = `M ${x(0)} ${y(data[0][key])}`;
+    for (let i = 1; i < data.length; i++) aD += ` L ${x(i)} ${y(data[i][key])}`;
+    aD += ` L ${x(data.length - 1)} ${pad.t + ch} L ${x(0)} ${pad.t + ch} Z`;
+    const area = document.createElementNS(ns, 'path');
+    area.setAttribute('d', aD); area.setAttribute('fill', fillColor);
+    svg.appendChild(area);
+
+    let lD = `M ${x(0)} ${y(data[0][key])}`;
+    for (let i = 1; i < data.length; i++) lD += ` L ${x(i)} ${y(data[i][key])}`;
+    const line = document.createElementNS(ns, 'path');
+    line.setAttribute('d', lD); line.setAttribute('fill', 'none');
+    line.setAttribute('stroke', lineColor); line.setAttribute('stroke-width', '2');
+    svg.appendChild(line);
+
+    data.forEach((d, i) => {
+      const c = document.createElementNS(ns, 'circle');
+      c.setAttribute('cx', x(i)); c.setAttribute('cy', y(d[key]));
+      c.setAttribute('r', '3'); c.setAttribute('fill', lineColor);
+      c.setAttribute('stroke', '#fff'); c.setAttribute('stroke-width', '1.5');
+      svg.appendChild(c);
+    });
+  }
+
+  drawLine('won',  '#73be4b', 'rgba(115,190,75,0.08)');
+  drawLine('lost', '#f87171', 'rgba(248,113,113,0.08)');
+
+  // Hover hit areas
+  data.forEach((d, i) => {
+    const hit = document.createElementNS(ns, 'rect');
+    hit.setAttribute('x', x(i) - xS / 2); hit.setAttribute('y', pad.t);
+    hit.setAttribute('width', xS); hit.setAttribute('height', ch);
+    hit.setAttribute('fill', 'transparent');
+    const winRatePct = (d.won + d.lost) > 0 ? ((d.won / (d.won + d.lost)) * 100).toFixed(1) : '—';
+    hit.addEventListener('mouseenter', () => {
+      tooltip.classList.remove('hidden');
+      const dt = new Date(d.day + 'T00:00:00');
+      tooltip.innerHTML = `<strong>${dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</strong><br>Won: ${d.won} &nbsp; Lost: ${d.lost} &nbsp; Total: ${d.total}<br>Win Rate: ${winRatePct}%`;
+    });
+    hit.addEventListener('mousemove', e => {
+      const cr = svg.closest('.relative').getBoundingClientRect();
+      tooltip.style.left = (e.clientX - cr.left + 12) + 'px';
+      tooltip.style.top = (e.clientY - cr.top - 40) + 'px';
+    });
+    hit.addEventListener('mouseleave', () => tooltip.classList.add('hidden'));
+    svg.appendChild(hit);
+  });
+}
+
 // ─── Shift Schedule Logic ─────────────────────────────────
 const scheduleModal = document.getElementById('scheduleModal');
 
@@ -541,12 +639,31 @@ if (document.getElementById('closeScheduleModal')) {
 document.querySelectorAll('.dl-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const type = btn.dataset.type;
-    const useDateRange = type !== 'pending-replies';
-    let url = `${API_BASE_URL}/api/download-conversations?type=${type}`;
-    if (useDateRange) url += `&${qs()}`;
     const headers = {};
     if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+
     try {
+      if (type === 'management-win-rate') {
+        // Build CSV client-side from the win-rate endpoint
+        const data = await api(`/api/management-win-rate?${qs()}`);
+        const rows = [['Date', 'Won', 'Lost', 'Total', 'Win Rate (%)']];
+        for (const d of data) {
+          const wr = (d.won + d.lost) > 0 ? ((d.won / (d.won + d.lost)) * 100).toFixed(2) : '0.00';
+          rows.push([d.day, d.won, d.lost, d.total, wr]);
+        }
+        const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'management-win-rate.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        return;
+      }
+
+      const useDateRange = type !== 'pending-replies';
+      let url = `${API_BASE_URL}/api/download-conversations?type=${type}`;
+      if (useDateRange) url += `&${qs()}`;
       const r = await fetch(url, { headers });
       if (!r.ok) throw new Error(r.status);
       const blob = await r.blob();
@@ -606,7 +723,7 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts, schedules, mgmtKpis] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
@@ -614,6 +731,7 @@ async function loadAll() {
       api(`/api/top-accounts?${q}`),
       api(`/api/team-schedules`),
       api(`/api/management-kpis?${q}`),
+      api(`/api/management-win-rate?${q}`),
     ]);
 
     teamSchedules = schedules || {};
@@ -626,6 +744,7 @@ async function loadAll() {
     renderTopAccounts(accounts);
     renderTeamDirectory(team);
     renderManagementKPIs(mgmtKpis);
+    renderWinRateChart(winRate);
   } catch (err) {
     console.error('Load error:', err);
   } finally {

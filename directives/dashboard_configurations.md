@@ -248,7 +248,58 @@ Shows date and both values:
 
 ---
 
-## Chart 5: Pending Replies (Main Grid — 12 columns)
+## Chart 5: Win Rate Trend (Management Dashboard)
+
+### Endpoint
+`GET /api/management-win-rate?start=&end=`
+
+### Date Filtered
+Yes — `c.created_at BETWEEN start AND end`
+
+### Visual
+SVG line chart — two lines (Won = green `#73be4b`, Lost = red `#f87171`) with area fills.
+Tooltip shows: date, Won, Lost, Total, Win Rate %.
+
+### BigQuery Tables
+- `front.conversation` — `id`, `created_at`
+- `front.conversation_tag` + `front.tag` — for `won`/`lost` tags
+- `sm_stage_ai.email_quote_requests` — `front_conversation_id`, `quote_request_number`
+- Sales Team inbox filter applied via `SALES_INBOX_FILTER`
+
+### SQL (summary)
+Groups by `DATE(c.created_at, 'America/Los_Angeles')`. Only rows where `quote_request_number IS NOT NULL`.
+Per day: `won = COUNT(DISTINCT CASE WHEN tag='won')`, `lost = COUNT(DISTINCT CASE WHEN tag='lost')`, `total = COUNT(DISTINCT qrn)`.
+
+### Response Shape
+```json
+[
+  { "day": "2026-03-12", "total": 5, "won": 3, "lost": 1 },
+  ...
+]
+```
+
+### Win Rate Formula (client-side, per day)
+```
+win_rate = won / (won + lost) * 100   (shown in tooltip only)
+```
+
+### Chart Config
+- **Won Line**: `#73be4b` (accent green), fill `rgba(115,190,75,0.08)`
+- **Lost Line**: `#f87171` (red-400), fill `rgba(248,113,113,0.08)`
+- Y-axis: count (0 → max of won/lost)
+- X-axis: up to 7 evenly-spaced date labels
+- Point radius: 3, stroke white 1.5
+- Grid lines: `#F3F4F6`
+
+### Download
+- Button: top-right of "Win Rate Trend" panel header
+- Type param: `management-win-rate` (handled client-side, not via `/api/download-conversations`)
+- Columns: Date, Won, Lost, Total, Win Rate (%)
+- Filename: `management-win-rate.csv`
+
+---
+
+## Chart 6: Pending Replies (Main Grid — 12 columns)
 
 ### Endpoint
 `GET /api/zero-replies-conversations` (no date params)
