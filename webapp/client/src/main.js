@@ -127,6 +127,10 @@ function navigateTo(page) {
   // Show date picker only on pricing-dashboard and management-dashboard
   const dp = document.getElementById('datePreset');
   if (dp) dp.style.display = (page === 'pricing-dashboard' || page === 'management-dashboard') ? '' : 'none';
+
+  // Re-render SVG charts now that the page is visible and has real dimensions
+  if (page === 'pricing-dashboard' && lastTrendData) renderTrend(lastTrendData);
+  if (page === 'management-dashboard' && lastWinRateData) renderWinRateChart(lastWinRateData);
 }
 
 document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -208,6 +212,7 @@ function renderDonuts(quotes) {
 
 // ─── Render: Conversation Trend ─────────────────────
 function renderTrend(data) {
+  lastTrendData = data;
   const svg = document.getElementById('trendChart');
   const tooltip = document.getElementById('trendTooltip');
   svg.innerHTML = '';
@@ -313,6 +318,10 @@ function renderTopAccounts(data) {
     </div>`;
   }).join('');
 }
+
+// ─── Chart data cache (for re-render on tab switch) ──
+let lastTrendData = null;
+let lastWinRateData = null;
 
 // ─── Render: Team Performance Table ─────────────────
 let teamData = [];
@@ -437,6 +446,7 @@ function renderManagementKPIs(data) {
 
 // ─── Render: Win Rate Chart ──────────────────────────
 function renderWinRateChart(data) {
+  lastWinRateData = data;
   const svg = document.getElementById('winRateChart');
   const tooltip = document.getElementById('winRateTooltip');
   svg.innerHTML = '';
