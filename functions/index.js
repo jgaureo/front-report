@@ -575,9 +575,17 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
           WHERE direction IN ('import','export','domestic','crosstrade')
         ) sub
         GROUP BY direction, mode_label
+      ),
+      no_dir AS (
+        SELECT COUNT(DISTINCT id) AS total
+        FROM per_conv
+        WHERE direction NOT IN ('import','export','domestic','crosstrade')
       )
       SELECT direction, mode_label, total, won, lost
       FROM breakdown
+      UNION ALL
+      SELECT '__no_direction__', '', total, 0, 0
+      FROM no_dir
       ORDER BY direction, total DESC
     `;
     const rows = await runQuery(sql, { start: startStr, end: endStr });
@@ -594,7 +602,12 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
       map[d.key] = { key: d.key, label: d.label, total: 0, won: 0, lost: 0, modes: [] };
     }
 
+    let no_direction_total = 0;
     for (const r of rows) {
+      if (r.direction === '__no_direction__') {
+        no_direction_total = Number(r.total);
+        continue;
+      }
       const d = map[r.direction];
       if (!d) continue;
       const total = Number(r.total);
@@ -609,7 +622,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
     const directions = DIRECTIONS.map(d => map[d.key]);
     const grand_total = directions.reduce((s, d) => s + d.total, 0);
 
-    res.json({ grand_total, directions });
+    res.json({ grand_total, no_direction_total, directions });
   } catch (err) {
     console.error('management-freight-breakdown error:', err);
     res.status(500).json({ error: err.message });

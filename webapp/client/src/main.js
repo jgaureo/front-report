@@ -541,7 +541,7 @@ function renderFreightBreakdown(data) {
     return;
   }
 
-  const { grand_total, directions } = data;
+  const { grand_total, no_direction_total, directions } = data;
   const fmt = n => Number(n).toLocaleString();
   const pct = (n, d) => d > 0 ? ((n / d) * 100).toFixed(1) : '0.0';
 
@@ -585,6 +585,13 @@ function renderFreightBreakdown(data) {
     })
   ).join('');
 
+  const noDirectionNote = no_direction_total > 0
+    ? `<div class="mt-3 text-[10px] text-slate-400 italic">
+        * ${fmt(no_direction_total)} QRN(s) have no direction recorded and are excluded from the totals above.
+        Grand total including unclassified: ${fmt(grand_total + no_direction_total)}.
+      </div>`
+    : '';
+
   container.innerHTML = `
     <div class="grid grid-cols-4 gap-2 mb-4">${cards}</div>
     <div class="overflow-x-auto">
@@ -602,7 +609,8 @@ function renderFreightBreakdown(data) {
         </thead>
         <tbody>${modeRows || '<tr><td colspan="7" class="py-3 text-center text-xs text-slate-400">No mode data</td></tr>'}</tbody>
       </table>
-    </div>`;
+    </div>
+    ${noDirectionNote}`;
 }
 
 // ─── Shift Schedule Logic ─────────────────────────────────
