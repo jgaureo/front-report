@@ -726,7 +726,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
         WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
         GROUP BY c.id, direction, qr_mode
       ),
-      rows AS (
+      breakdown AS (
         SELECT direction, mode_label, COUNT(*) AS total, SUM(is_won) AS won, SUM(is_lost) AS lost
         FROM (
           SELECT direction,
@@ -747,7 +747,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
         GROUP BY direction, mode_label
       )
       SELECT direction, mode_label, total, won, lost
-      FROM rows
+      FROM breakdown
       ORDER BY direction, total DESC
     `;
     const rows = await runQuery(sql, { start: startStr, end: endStr });
