@@ -78,7 +78,7 @@
         <td class="py-1.5 px-2 text-[11px] text-right text-red-400 font-semibold">${n(m.lost)}</td>
         <td class="py-1.5 px-2 text-[11px] text-right font-bold text-slate-700 dark:text-slate-300">${g}%</td>
       </tr>`})).join("");t.innerHTML=`
-    <div class="grid grid-cols-5 gap-2 mb-4">${p}</div>
+    <div class="grid grid-cols-4 gap-2 mb-4">${p}</div>
     <div class="overflow-x-auto">
       <table class="w-full text-left border-collapse">
         <thead>
