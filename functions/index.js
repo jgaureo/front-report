@@ -533,17 +533,13 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
       WITH per_conv AS (
         SELECT
           c.id,
-          MAX(CASE WHEN LOWER(t.name) = 'import'      THEN 1 ELSE 0 END) AS is_import,
-          MAX(CASE WHEN LOWER(t.name) = 'export'      THEN 1 ELSE 0 END) AS is_export,
-          MAX(CASE WHEN LOWER(t.name) = 'domestic'    THEN 1 ELSE 0 END) AS is_domestic,
-          MAX(CASE WHEN LOWER(t.name) = 'customs'     THEN 1 ELSE 0 END) AS is_customs,
-          MAX(CASE WHEN LOWER(t.name) = 'cross-trade' THEN 1 ELSE 0 END) AS is_crosstrade,
-          MAX(CASE WHEN LOWER(t.name) = 'won'         THEN 1 ELSE 0 END) AS is_won,
-          MAX(CASE WHEN LOWER(t.name) = 'lost'        THEN 1 ELSE 0 END) AS is_lost,
-          MAX(CASE WHEN LOWER(t.name) = 'fcl'         THEN 1 ELSE 0 END) AS is_fcl,
-          MAX(CASE WHEN LOWER(t.name) = 'lcl'         THEN 1 ELSE 0 END) AS is_lcl,
-          MAX(CASE WHEN LOWER(t.name) = 'ltl'         THEN 1 ELSE 0 END) AS is_ltl,
-          MAX(CASE WHEN LOWER(t.name) = 'ftl'         THEN 1 ELSE 0 END) AS is_ftl,
+          LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')) AS direction,
+          MAX(CASE WHEN LOWER(t.name) = 'won'  THEN 1 ELSE 0 END) AS is_won,
+          MAX(CASE WHEN LOWER(t.name) = 'lost' THEN 1 ELSE 0 END) AS is_lost,
+          MAX(CASE WHEN LOWER(t.name) = 'fcl'  THEN 1 ELSE 0 END) AS is_fcl,
+          MAX(CASE WHEN LOWER(t.name) = 'lcl'  THEN 1 ELSE 0 END) AS is_lcl,
+          MAX(CASE WHEN LOWER(t.name) = 'ltl'  THEN 1 ELSE 0 END) AS is_ltl,
+          MAX(CASE WHEN LOWER(t.name) = 'ftl'  THEN 1 ELSE 0 END) AS is_ftl,
           COALESCE(
             CASE
               WHEN UPPER(JSON_VALUE(q.quote_data, '$.mode')) IN ('SEA','OCEAN') THEN 'OCEAN'
@@ -558,12 +554,12 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
         WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
-        GROUP BY c.id, qr_mode
+        GROUP BY c.id, direction, qr_mode
       ),
       rows AS (
         SELECT direction, mode_label, COUNT(*) AS total, SUM(is_won) AS won, SUM(is_lost) AS lost
         FROM (
-          SELECT 'import' AS direction,
+          SELECT direction,
             CASE
               WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
               WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
@@ -575,63 +571,8 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
               ELSE 'Other'
             END AS mode_label,
             is_won, is_lost
-          FROM per_conv WHERE is_import=1
-          UNION ALL
-          SELECT 'export' AS direction,
-            CASE
-              WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
-              WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
-              WHEN qr_mode='OCEAN'               THEN 'OCEAN'
-              WHEN qr_mode='AIR'                 THEN 'AIR'
-              WHEN qr_mode='ROAD' AND is_ltl=1   THEN 'ROAD LTL'
-              WHEN qr_mode='ROAD' AND is_ftl=1   THEN 'ROAD FTL'
-              WHEN qr_mode='ROAD'                THEN 'ROAD'
-              ELSE 'Other'
-            END AS mode_label,
-            is_won, is_lost
-          FROM per_conv WHERE is_export=1
-          UNION ALL
-          SELECT 'domestic' AS direction,
-            CASE
-              WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
-              WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
-              WHEN qr_mode='OCEAN'               THEN 'OCEAN'
-              WHEN qr_mode='AIR'                 THEN 'AIR'
-              WHEN qr_mode='ROAD' AND is_ltl=1   THEN 'ROAD LTL'
-              WHEN qr_mode='ROAD' AND is_ftl=1   THEN 'ROAD FTL'
-              WHEN qr_mode='ROAD'                THEN 'ROAD'
-              ELSE 'Other'
-            END AS mode_label,
-            is_won, is_lost
-          FROM per_conv WHERE is_domestic=1
-          UNION ALL
-          SELECT 'customs' AS direction,
-            CASE
-              WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
-              WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
-              WHEN qr_mode='OCEAN'               THEN 'OCEAN'
-              WHEN qr_mode='AIR'                 THEN 'AIR'
-              WHEN qr_mode='ROAD' AND is_ltl=1   THEN 'ROAD LTL'
-              WHEN qr_mode='ROAD' AND is_ftl=1   THEN 'ROAD FTL'
-              WHEN qr_mode='ROAD'                THEN 'ROAD'
-              ELSE 'Other'
-            END AS mode_label,
-            is_won, is_lost
-          FROM per_conv WHERE is_customs=1
-          UNION ALL
-          SELECT 'crosstrade' AS direction,
-            CASE
-              WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
-              WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
-              WHEN qr_mode='OCEAN'               THEN 'OCEAN'
-              WHEN qr_mode='AIR'                 THEN 'AIR'
-              WHEN qr_mode='ROAD' AND is_ltl=1   THEN 'ROAD LTL'
-              WHEN qr_mode='ROAD' AND is_ftl=1   THEN 'ROAD FTL'
-              WHEN qr_mode='ROAD'                THEN 'ROAD'
-              ELSE 'Other'
-            END AS mode_label,
-            is_won, is_lost
-          FROM per_conv WHERE is_crosstrade=1
+          FROM per_conv
+          WHERE direction IN ('import','export','domestic','customs','crosstrade')
         )
         GROUP BY direction, mode_label
       )

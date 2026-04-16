@@ -315,13 +315,13 @@ Yes — `c.created_at BETWEEN start AND end`
 
 ### BigQuery Tables
 - `front.conversation` — `id`, `created_at`
-- `front.conversation_tag` + `front.tag` — direction tags (import/export/domestic/customs/cross-trade), load type (fcl/lcl/ltl/ftl), won/lost
-- `sm_stage_ai.email_quote_requests` — INNER JOIN on `front_conversation_id` WHERE `quote_request_number IS NOT NULL`; `quote_data.mode` for OCEAN/AIR/ROAD
+- `front.conversation_tag` + `front.tag` — load type (fcl/lcl/ltl/ftl) and won/lost tags only
+- `sm_stage_ai.email_quote_requests` — INNER JOIN on `front_conversation_id` WHERE `quote_request_number IS NOT NULL`; `JSON_VALUE(quote_data, '$.direction')` for direction; `quote_data.mode` for OCEAN/AIR/ROAD
 - Sales Team inbox filter applied via `SALES_INBOX_FILTER`
 
 ### Direction Source
-Front tags: `import`, `export`, `domestic`, `customs`, `cross-trade`.
-Note: `Customs` tag exists in `front.tag` but has 0 conversations as of 2026-04-16 — included in query for future use.
+`JSON_VALUE(q.quote_data, '$.direction')` from `email_quote_requests`, lowercased.
+Values: `import`, `export`, `domestic`, `crosstrade`. Customs shows 0 (not present in `quote_data.direction`).
 
 ### Mode Labels
 | Condition | Label |
