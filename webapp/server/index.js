@@ -695,7 +695,159 @@ app.get('/api/management-win-rate', async (req, res) => {
   }
 });
 
-// ─── 8. Global Search ────────────────────────────────────
+// ─── 8. Management Freight Breakdown ─────────────────────
+app.get('/api/management-freight-breakdown', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const sql = `
+      WITH per_conv AS (
+        SELECT
+          c.id,
+          MAX(CASE WHEN LOWER(t.name) = 'import'      THEN 1 ELSE 0 END) AS is_import,
+          MAX(CASE WHEN LOWER(t.name) = 'export'      THEN 1 ELSE 0 END) AS is_export,
+          MAX(CASE WHEN LOWER(t.name) = 'domestic'    THEN 1 ELSE 0 END) AS is_domestic,
+          MAX(CASE WHEN LOWER(t.name) = 'customs'     THEN 1 ELSE 0 END) AS is_customs,
+          MAX(CASE WHEN LOWER(t.name) = 'cross-trade' THEN 1 ELSE 0 END) AS is_crosstrade,
+          MAX(CASE WHEN LOWER(t.name) = 'won'         THEN 1 ELSE 0 END) AS is_won,
+          MAX(CASE WHEN LOWER(t.name) = 'lost'        THEN 1 ELSE 0 END) AS is_lost,
+          MAX(CASE WHEN LOWER(t.name) = 'fcl'         THEN 1 ELSE 0 END) AS is_fcl,
+          MAX(CASE WHEN LOWER(t.name) = 'lcl'         THEN 1 ELSE 0 END) AS is_lcl,
+          MAX(CASE WHEN LOWER(t.name) = 'ltl'         THEN 1 ELSE 0 END) AS is_ltl,
+          MAX(CASE WHEN LOWER(t.name) = 'ftl'         THEN 1 ELSE 0 END) AS is_ftl,
+          COALESCE(
+            CASE
+              WHEN UPPER(JSON_VALUE(q.quote_data, '$.mode')) IN ('SEA','OCEAN') THEN 'OCEAN'
+              WHEN UPPER(JSON_VALUE(q.quote_data, '$.mode')) = 'AIR'            THEN 'AIR'
+              WHEN UPPER(JSON_VALUE(q.quote_data, '$.mode')) = 'ROAD'           THEN 'ROAD'
+              ELSE ''
+            END, '') AS qr_mode
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        INNER JOIN \`${AI}.email_quote_requests\` q
+          ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+        LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        GROUP BY c.id, qr_mode
+      ),
+      rows AS (
+        SELECT direction, mode_label, COUNT(*) AS total, SUM(is_won) AS won, SUM(is_lost) AS lost
+        FROM (
+          SELECT 'import' AS direction,
+            CASE
+              WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
+              WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
+              WHEN qr_mode='OCEAN'               THEN 'OCEAN'
+              WHEN qr_mode='AIR'                 THEN 'AIR'
+              WHEN qr_mode='ROAD' AND is_ltl=1   THEN 'ROAD LTL'
+              WHEN qr_mode='ROAD' AND is_ftl=1   THEN 'ROAD FTL'
+              WHEN qr_mode='ROAD'                THEN 'ROAD'
+              ELSE 'Other'
+            END AS mode_label,
+            is_won, is_lost
+          FROM per_conv WHERE is_import=1
+          UNION ALL
+          SELECT 'export' AS direction,
+            CASE
+              WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
+              WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
+              WHEN qr_mode='OCEAN'               THEN 'OCEAN'
+              WHEN qr_mode='AIR'                 THEN 'AIR'
+              WHEN qr_mode='ROAD' AND is_ltl=1   THEN 'ROAD LTL'
+              WHEN qr_mode='ROAD' AND is_ftl=1   THEN 'ROAD FTL'
+              WHEN qr_mode='ROAD'                THEN 'ROAD'
+              ELSE 'Other'
+            END AS mode_label,
+            is_won, is_lost
+          FROM per_conv WHERE is_export=1
+          UNION ALL
+          SELECT 'domestic' AS direction,
+            CASE
+              WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
+              WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
+              WHEN qr_mode='OCEAN'               THEN 'OCEAN'
+              WHEN qr_mode='AIR'                 THEN 'AIR'
+              WHEN qr_mode='ROAD' AND is_ltl=1   THEN 'ROAD LTL'
+              WHEN qr_mode='ROAD' AND is_ftl=1   THEN 'ROAD FTL'
+              WHEN qr_mode='ROAD'                THEN 'ROAD'
+              ELSE 'Other'
+            END AS mode_label,
+            is_won, is_lost
+          FROM per_conv WHERE is_domestic=1
+          UNION ALL
+          SELECT 'customs' AS direction,
+            CASE
+              WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
+              WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
+              WHEN qr_mode='OCEAN'               THEN 'OCEAN'
+              WHEN qr_mode='AIR'                 THEN 'AIR'
+              WHEN qr_mode='ROAD' AND is_ltl=1   THEN 'ROAD LTL'
+              WHEN qr_mode='ROAD' AND is_ftl=1   THEN 'ROAD FTL'
+              WHEN qr_mode='ROAD'                THEN 'ROAD'
+              ELSE 'Other'
+            END AS mode_label,
+            is_won, is_lost
+          FROM per_conv WHERE is_customs=1
+          UNION ALL
+          SELECT 'crosstrade' AS direction,
+            CASE
+              WHEN qr_mode='OCEAN' AND is_fcl=1 THEN 'OCEAN FCL'
+              WHEN qr_mode='OCEAN' AND is_lcl=1 THEN 'OCEAN LCL'
+              WHEN qr_mode='OCEAN'               THEN 'OCEAN'
+              WHEN qr_mode='AIR'                 THEN 'AIR'
+              WHEN qr_mode='ROAD' AND is_ltl=1   THEN 'ROAD LTL'
+              WHEN qr_mode='ROAD' AND is_ftl=1   THEN 'ROAD FTL'
+              WHEN qr_mode='ROAD'                THEN 'ROAD'
+              ELSE 'Other'
+            END AS mode_label,
+            is_won, is_lost
+          FROM per_conv WHERE is_crosstrade=1
+        )
+        GROUP BY direction, mode_label
+      )
+      SELECT direction, mode_label, total, won, lost
+      FROM rows
+      ORDER BY direction, total DESC
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+
+    // Build structured response
+    const DIRECTIONS = [
+      { key: 'import',     label: 'Import' },
+      { key: 'export',     label: 'Export' },
+      { key: 'domestic',   label: 'Domestic' },
+      { key: 'customs',    label: 'Customs' },
+      { key: 'crosstrade', label: 'Cross-Trade' },
+    ];
+
+    const map = {};
+    for (const d of DIRECTIONS) {
+      map[d.key] = { key: d.key, label: d.label, total: 0, won: 0, lost: 0, modes: [] };
+    }
+
+    for (const r of rows) {
+      const d = map[r.direction];
+      if (!d) continue;
+      const total = Number(r.total);
+      const won   = Number(r.won);
+      const lost  = Number(r.lost);
+      d.total += total;
+      d.won   += won;
+      d.lost  += lost;
+      d.modes.push({ label: r.mode_label, total, won, lost });
+    }
+
+    const directions = DIRECTIONS.map(d => map[d.key]);
+    const grand_total = directions.reduce((s, d) => s + d.total, 0);
+
+    res.json({ grand_total, directions });
+  } catch (err) {
+    console.error('management-freight-breakdown error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 9. Global Search ────────────────────────────────────
 app.get('/api/search', async (req, res) => {
   try {
     const keyword = (req.query.q || '').trim();

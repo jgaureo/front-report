@@ -299,7 +299,77 @@ win_rate = won / (won + lost) * 100   (shown in tooltip only)
 
 ---
 
-## Chart 6: Pending Replies (Main Grid — 12 columns)
+## Chart 6: Freight Breakdown (Management Dashboard)
+
+### Endpoint
+`GET /api/management-freight-breakdown?start=&end=`
+
+### Date Filtered
+Yes — `c.created_at BETWEEN start AND end`
+
+### Visual
+- **KPI Cards row** (5 columns): one card per direction (Import, Export, Domestic, Customs, Cross-Trade).
+  Each card shows: total, % of grand total, Won count, Lost count, Win %, Loss %.
+- **Mode Breakdown Table** (below cards): one row per direction × mode combination.
+  Columns: Direction, Mode, Total, % of Direction, Won, Lost, Win %.
+
+### BigQuery Tables
+- `front.conversation` — `id`, `created_at`
+- `front.conversation_tag` + `front.tag` — direction tags (import/export/domestic/customs/cross-trade), load type (fcl/lcl/ltl/ftl), won/lost
+- `sm_stage_ai.email_quote_requests` — INNER JOIN on `front_conversation_id` WHERE `quote_request_number IS NOT NULL`; `quote_data.mode` for OCEAN/AIR/ROAD
+- Sales Team inbox filter applied via `SALES_INBOX_FILTER`
+
+### Direction Source
+Front tags: `import`, `export`, `domestic`, `customs`, `cross-trade`.
+Note: `Customs` tag exists in `front.tag` but has 0 conversations as of 2026-04-16 — included in query for future use.
+
+### Mode Labels
+| Condition | Label |
+|---|---|
+| `qr_mode='OCEAN' AND is_fcl=1` | OCEAN FCL |
+| `qr_mode='OCEAN' AND is_lcl=1` | OCEAN LCL |
+| `qr_mode='OCEAN'` (no load type) | OCEAN |
+| `qr_mode='AIR'` | AIR |
+| `qr_mode='ROAD' AND is_ltl=1` | ROAD LTL |
+| `qr_mode='ROAD' AND is_ftl=1` | ROAD FTL |
+| `qr_mode='ROAD'` (no load type) | ROAD |
+| else | Other |
+
+### Response Shape
+```json
+{
+  "grand_total": 3368,
+  "directions": [
+    {
+      "key": "import", "label": "Import", "total": 1464, "won": 310, "lost": 890,
+      "modes": [
+        { "label": "OCEAN FCL", "total": 600, "won": 140, "lost": 340 },
+        { "label": "AIR",       "total": 200, "won": 60,  "lost": 100 }
+      ]
+    },
+    { "key": "export",     "label": "Export",      ... },
+    { "key": "domestic",   "label": "Domestic",    ... },
+    { "key": "customs",    "label": "Customs",     ... },
+    { "key": "crosstrade", "label": "Cross-Trade", ... }
+  ]
+}
+```
+
+### Client-side Formulas
+- **Share %** = `direction.total / grand_total * 100`
+- **% of Direction** (mode) = `mode.total / direction.total * 100`
+- **Win %** = `won / (won + lost) * 100`
+- **Loss %** = `lost / (won + lost) * 100`
+
+### Download
+- Button: top-right of "Freight Breakdown" panel header
+- Type param: `management-freight-breakdown` (handled client-side, not via `/api/download-conversations`)
+- Columns: Direction, Mode, Total, % of Direction, Won, Lost, Win %
+- Filename: `management-freight-breakdown.csv`
+
+---
+
+## Chart 7: Pending Replies (Main Grid — 12 columns)
 
 ### Endpoint
 `GET /api/zero-replies-conversations` (no date params)

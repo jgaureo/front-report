@@ -533,6 +533,78 @@ function renderWinRateChart(data) {
   });
 }
 
+// ─── Render: Freight Breakdown ───────────────────────────
+function renderFreightBreakdown(data) {
+  const container = document.getElementById('freightBreakdown');
+  if (!data || !data.directions) {
+    container.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No data</div>';
+    return;
+  }
+
+  const { grand_total, directions } = data;
+  const fmt = n => Number(n).toLocaleString();
+  const pct = (n, d) => d > 0 ? ((n / d) * 100).toFixed(1) : '0.0';
+
+  // Direction KPI cards
+  const cards = directions.map(d => {
+    const share    = pct(d.total, grand_total);
+    const winRate  = pct(d.won, d.won + d.lost);
+    const lossRate = pct(d.lost, d.won + d.lost);
+    return `
+      <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-3 flex flex-col gap-1 min-w-0">
+        <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wide truncate">${d.label}</div>
+        <div class="text-xl font-extrabold text-primary leading-none">${fmt(d.total)}</div>
+        <div class="text-[10px] text-slate-400">${share}% of total</div>
+        <div class="flex items-center gap-2 mt-1">
+          <span class="text-xs font-bold text-[#73be4b]">${fmt(d.won)} Won</span>
+          <span class="text-[10px] text-slate-300">|</span>
+          <span class="text-xs font-bold text-red-400">${fmt(d.lost)} Lost</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] font-semibold text-[#73be4b]">${winRate}% win</span>
+          <span class="text-[10px] text-slate-300">|</span>
+          <span class="text-[10px] font-semibold text-red-400">${lossRate}% loss</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Mode breakdown table — only directions that have mode rows
+  const modeRows = directions.flatMap(d =>
+    d.modes.map(m => {
+      const mShare   = pct(m.total, d.total);
+      const mWinRate = pct(m.won, m.won + m.lost);
+      return `<tr class="border-t border-slate-100 dark:border-slate-700/50">
+        <td class="py-1.5 px-2 text-[11px] text-slate-500">${d.label}</td>
+        <td class="py-1.5 px-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300">${m.label}</td>
+        <td class="py-1.5 px-2 text-[11px] text-right text-slate-700 dark:text-slate-300">${fmt(m.total)}</td>
+        <td class="py-1.5 px-2 text-[11px] text-right text-slate-400">${mShare}%</td>
+        <td class="py-1.5 px-2 text-[11px] text-right text-[#73be4b] font-semibold">${fmt(m.won)}</td>
+        <td class="py-1.5 px-2 text-[11px] text-right text-red-400 font-semibold">${fmt(m.lost)}</td>
+        <td class="py-1.5 px-2 text-[11px] text-right font-bold text-slate-700 dark:text-slate-300">${mWinRate}%</td>
+      </tr>`;
+    })
+  ).join('');
+
+  container.innerHTML = `
+    <div class="grid grid-cols-5 gap-2 mb-4">${cards}</div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-left border-collapse">
+        <thead>
+          <tr class="bg-slate-100 dark:bg-slate-700/40">
+            <th class="py-1.5 px-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide">Direction</th>
+            <th class="py-1.5 px-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide">Mode</th>
+            <th class="py-1.5 px-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide text-right">Total</th>
+            <th class="py-1.5 px-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide text-right">% of Dir</th>
+            <th class="py-1.5 px-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide text-right">Won</th>
+            <th class="py-1.5 px-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide text-right">Lost</th>
+            <th class="py-1.5 px-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide text-right">Win %</th>
+          </tr>
+        </thead>
+        <tbody>${modeRows || '<tr><td colspan="7" class="py-3 text-center text-xs text-slate-400">No mode data</td></tr>'}</tbody>
+      </table>
+    </div>`;
+}
+
 // ─── Shift Schedule Logic ─────────────────────────────────
 const scheduleModal = document.getElementById('scheduleModal');
 
@@ -643,6 +715,33 @@ document.querySelectorAll('.dl-btn').forEach(btn => {
     if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
 
     try {
+      if (type === 'management-freight-breakdown') {
+        const data = await api(`/api/management-freight-breakdown?${qs()}`);
+        const rows = [['Direction', 'Mode', 'Total', '% of Direction', 'Won', 'Lost', 'Win %']];
+        const pct = (n, d) => d > 0 ? ((n / d) * 100).toFixed(2) : '0.00';
+        for (const dir of (data.directions || [])) {
+          for (const m of (dir.modes || [])) {
+            rows.push([
+              dir.label,
+              m.label,
+              m.total,
+              pct(m.total, dir.total),
+              m.won,
+              m.lost,
+              pct(m.won, m.won + m.lost),
+            ]);
+          }
+        }
+        const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'management-freight-breakdown.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        return;
+      }
+
       if (type === 'management-win-rate') {
         // Build CSV client-side from the win-rate endpoint
         const data = await api(`/api/management-win-rate?${qs()}`);
@@ -723,7 +822,7 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
@@ -732,6 +831,7 @@ async function loadAll() {
       api(`/api/team-schedules`),
       api(`/api/management-kpis?${q}`),
       api(`/api/management-win-rate?${q}`),
+      api(`/api/management-freight-breakdown?${q}`),
     ]);
 
     teamSchedules = schedules || {};
@@ -745,6 +845,7 @@ async function loadAll() {
     renderTeamDirectory(team);
     renderManagementKPIs(mgmtKpis);
     renderWinRateChart(winRate);
+    renderFreightBreakdown(freightBreakdown);
   } catch (err) {
     console.error('Load error:', err);
   } finally {
