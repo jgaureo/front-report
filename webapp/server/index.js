@@ -872,7 +872,32 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
   }
 });
 
-// ─── 9. Global Search ────────────────────────────────────
+// ─── 9. Management No-Direction QRNs ─────────────────────
+app.get('/api/management-no-direction', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const sql = `
+      SELECT DISTINCT
+        c.id AS conversation_id,
+        q.quote_request_number AS qrn
+      FROM \`${FRONT}.conversation\` c
+      ${SALES_INBOX_FILTER}
+      INNER JOIN \`${AI}.email_quote_requests\` q
+        ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        AND LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), ''))
+            NOT IN ('import','export','domestic','crosstrade')
+      ORDER BY c.id
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+    res.json(rows.map(r => ({ conversation_id: r.conversation_id, qrn: r.qrn })));
+  } catch (err) {
+    console.error('management-no-direction error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 10. Global Search ───────────────────────────────────
 app.get('/api/search', async (req, res) => {
   try {
     const keyword = (req.query.q || '').trim();
