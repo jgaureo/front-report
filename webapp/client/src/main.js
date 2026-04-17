@@ -442,7 +442,7 @@ function renderManagementKPIs(data) {
 
   const c = data.current;
   const p = data.previous || {};
-  const modes = data.mode_breakdown || [];
+  const statuses = data.status_breakdown || [];
   const daily = data.daily || [];
 
   const fmt = n => Number(n).toLocaleString();
@@ -503,28 +503,26 @@ function renderManagementKPIs(data) {
     </svg>`;
   }
 
-  // Mode breakdown bar + legend dots
-  const MODE_COLORS = {
-    'AIR':       '#5B86AD',
-    'OCEAN FCL': '#73be4b',
-    'OCEAN LCL': '#22c55e',
-    'OCEAN':     '#3b82f6',
-    'ROAD LTL':  '#f59e0b',
-    'ROAD FTL':  '#f97316',
-    'ROAD':      '#ef4444',
-    'Other':     '#9CA3AF',
+  // Status tag breakdown bar + legend dots
+  const STATUS_TAG_COLORS = {
+    'Contacted':       '#5B86AD',
+    'Need to Quote':   '#f59e0b',
+    'Quoted':          '#73be4b',
+    'Need to Requote': '#f97316',
+    'Need to Onboard': '#8b5cf6',
+    'Pending Review':  '#ec4899',
   };
-  const modeTotal = modes.reduce((s, m) => s + m.count, 0) || 1;
-  const modeBar = modes.length ? `
+  const statusTotal = statuses.reduce((s, st) => s + st.count, 0) || 1;
+  const statusBar = statuses.length ? `
     <div class="flex w-full h-2 rounded-full overflow-hidden gap-px mt-3 mb-2.5">
-      ${modes.map(m => `<div style="width:${(m.count/modeTotal*100).toFixed(1)}%;background:${MODE_COLORS[m.mode]||'#9CA3AF'}" title="${m.mode}: ${fmt(m.count)}"></div>`).join('')}
+      ${statuses.map(st => `<div style="width:${(st.count/statusTotal*100).toFixed(1)}%;background:${STATUS_TAG_COLORS[st.status]||'#9CA3AF'}" title="${st.status}: ${fmt(st.count)}"></div>`).join('')}
     </div>
     <div class="flex flex-wrap gap-x-3 gap-y-1.5">
-      ${modes.map(m => `
+      ${statuses.map(st => `
         <div class="flex items-center gap-1">
-          <div class="size-2 rounded-sm flex-shrink-0" style="background:${MODE_COLORS[m.mode]||'#9CA3AF'}"></div>
-          <span class="text-[9px] text-slate-500">${m.mode}</span>
-          <span class="text-[9px] font-bold text-slate-600 dark:text-slate-300">${fmt(m.count)}</span>
+          <div class="size-2 rounded-sm flex-shrink-0" style="background:${STATUS_TAG_COLORS[st.status]||'#9CA3AF'}"></div>
+          <span class="text-[9px] text-slate-500">${st.status}</span>
+          <span class="text-[9px] font-bold text-slate-600 dark:text-slate-300">${fmt(st.count)}</span>
         </div>`).join('')}
     </div>` : '';
 
@@ -543,7 +541,7 @@ function renderManagementKPIs(data) {
         <p class="text-3xl font-bold text-primary leading-none">${fmt(c.total_conversations)}</p>
         ${sparkline('total', '#5B86AD')}
       </div>
-      ${modeBar}
+      ${statusBar}
       ${p.total_conversations ? `<p class="text-[9px] text-slate-400 mt-2">prev period: ${fmt(p.total_conversations)}</p>` : ''}
     </div>
 
