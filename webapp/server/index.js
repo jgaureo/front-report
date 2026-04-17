@@ -612,12 +612,21 @@ app.get('/api/top-accounts', async (req, res) => {
 app.get('/api/management-kpis', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
-    const sql = `
+    const start = new Date(startStr);
+    const end   = new Date(endStr);
+    const duration    = end.getTime() - start.getTime();
+    const prevStart   = new Date(start.getTime() - duration);
+    const prevEnd     = new Date(start.getTime() - 1);
+    const prevStartStr = prevStart.toISOString();
+    const prevEndStr   = prevEnd.toISOString();
+
+    // Reusable: total / won / lost counts for a date window
+    const baseSql = `
       WITH base AS (
         SELECT
           c.id,
           q.quote_request_number AS qrn,
-          MAX(CASE WHEN LOWER(t.name) = 'won' THEN 1 ELSE 0 END) AS is_won,
+          MAX(CASE WHEN LOWER(t.name) = 'won'  THEN 1 ELSE 0 END) AS is_won,
           MAX(CASE WHEN LOWER(t.name) = 'lost' THEN 1 ELSE 0 END) AS is_lost
         FROM \`${FRONT}.conversation\` c
         ${SALES_INBOX_FILTER}
@@ -630,22 +639,96 @@ app.get('/api/management-kpis', async (req, res) => {
       )
       SELECT
         COUNT(DISTINCT qrn) AS total_conversations,
-        COUNT(DISTINCT CASE WHEN is_won = 1 THEN qrn END) AS won_conversations,
+        COUNT(DISTINCT CASE WHEN is_won  = 1 THEN qrn END) AS won_conversations,
         COUNT(DISTINCT CASE WHEN is_lost = 1 THEN qrn END) AS lost_conversations
       FROM base
     `;
-    const rows = await runQuery(sql, { start: startStr, end: endStr });
-    const r = rows[0] || {};
-    const total = Number(r.total_conversations || 0);
-    const won = Number(r.won_conversations || 0);
-    const lost = Number(r.lost_conversations || 0);
-    const winRate = (won + lost) > 0 ? (won / (won + lost)) * 100 : 0;
+
+    // Mode breakdown for the current period
+    const modeSql = `
+      WITH per_conv AS (
+        SELECT
+          c.id,
+          MAX(CASE WHEN LOWER(t.name) = 'fcl' THEN 1 ELSE 0 END) AS is_fcl,
+          MAX(CASE WHEN LOWER(t.name) = 'lcl' THEN 1 ELSE 0 END) AS is_lcl,
+          MAX(CASE WHEN LOWER(t.name) = 'ltl' THEN 1 ELSE 0 END) AS is_ltl,
+          MAX(CASE WHEN LOWER(t.name) = 'ftl' THEN 1 ELSE 0 END) AS is_ftl,
+          COALESCE(CASE
+            WHEN UPPER(JSON_VALUE(q.quote_data, '$.mode')) IN ('SEA','OCEAN') THEN 'OCEAN'
+            WHEN UPPER(JSON_VALUE(q.quote_data, '$.mode')) = 'AIR'            THEN 'AIR'
+            WHEN UPPER(JSON_VALUE(q.quote_data, '$.mode')) = 'ROAD'           THEN 'ROAD'
+            ELSE 'Other'
+          END, 'Other') AS base_mode
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        INNER JOIN \`${AI}.email_quote_requests\` q
+          ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+        LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        GROUP BY c.id, base_mode
+      )
+      SELECT
+        CASE
+          WHEN base_mode = 'OCEAN' AND is_fcl = 1 THEN 'OCEAN FCL'
+          WHEN base_mode = 'OCEAN' AND is_lcl = 1 THEN 'OCEAN LCL'
+          WHEN base_mode = 'OCEAN'                 THEN 'OCEAN'
+          WHEN base_mode = 'AIR'                   THEN 'AIR'
+          WHEN base_mode = 'ROAD' AND is_ltl = 1   THEN 'ROAD LTL'
+          WHEN base_mode = 'ROAD' AND is_ftl = 1   THEN 'ROAD FTL'
+          WHEN base_mode = 'ROAD'                  THEN 'ROAD'
+          ELSE 'Other'
+        END AS mode_label,
+        COUNT(*) AS cnt
+      FROM per_conv
+      GROUP BY mode_label
+      ORDER BY cnt DESC
+    `;
+
+    // Daily sparkline data for the current period
+    const dailySql = `
+      WITH base AS (
+        SELECT
+          FORMAT_TIMESTAMP('%Y-%m-%d', c.created_at, '${TZ}') AS day,
+          q.quote_request_number AS qrn,
+          MAX(CASE WHEN LOWER(t.name) = 'won'  THEN 1 ELSE 0 END) AS is_won,
+          MAX(CASE WHEN LOWER(t.name) = 'lost' THEN 1 ELSE 0 END) AS is_lost
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        INNER JOIN \`${AI}.email_quote_requests\` q
+          ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+        LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        GROUP BY day, qrn
+      )
+      SELECT day, COUNT(*) AS total, SUM(is_won) AS won, SUM(is_lost) AS lost
+      FROM base
+      GROUP BY day
+      ORDER BY day
+    `;
+
+    const [currentRows, prevRows, modeRows, dailyRows] = await Promise.all([
+      runQuery(baseSql, { start: startStr,    end: endStr }),
+      runQuery(baseSql, { start: prevStartStr, end: prevEndStr }),
+      runQuery(modeSql, { start: startStr,    end: endStr }),
+      runQuery(dailySql,{ start: startStr,    end: endStr }),
+    ]);
+
+    function buildStats(rows) {
+      const r = rows[0] || {};
+      const total = Number(r.total_conversations || 0);
+      const won   = Number(r.won_conversations   || 0);
+      const lost  = Number(r.lost_conversations  || 0);
+      return { total_conversations: total, won_conversations: won, lost_conversations: lost,
+               win_rate: (won + lost) > 0 ? (won / (won + lost)) * 100 : 0 };
+    }
 
     res.json({
-      total_conversations: total,
-      won_conversations: won,
-      lost_conversations: lost,
-      win_rate: winRate,
+      current:        buildStats(currentRows),
+      previous:       buildStats(prevRows),
+      mode_breakdown: modeRows.map(r => ({ mode: r.mode_label, count: Number(r.cnt) })),
+      daily:          dailyRows.map(r => ({ day: r.day, total: Number(r.total), won: Number(r.won), lost: Number(r.lost) })),
     });
   } catch (err) {
     console.error('management-kpis error:', err);

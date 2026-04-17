@@ -437,11 +437,167 @@ function renderTeamDirectory(data) {
 
 // ─── Render: Management Dashboard KPIs ──────────────
 function renderManagementKPIs(data) {
-  document.getElementById('mgmt-total-conv').textContent = (data.total_conversations || 0).toLocaleString();
-  document.getElementById('mgmt-won-conv').textContent = (data.won_conversations || 0).toLocaleString();
-  document.getElementById('mgmt-lost-conv').textContent = (data.lost_conversations || 0).toLocaleString();
-  const winRate = data.win_rate != null ? data.win_rate.toFixed(2) + '%' : '0%';
-  document.getElementById('mgmt-win-rate').textContent = winRate;
+  const container = document.getElementById('mgmtKpiCards');
+  if (!data || !data.current) return;
+
+  const c = data.current;
+  const p = data.previous || {};
+  const modes = data.mode_breakdown || [];
+  const daily = data.daily || [];
+
+  const fmt = n => Number(n).toLocaleString();
+
+  // % change badge (invertColors=true means green when value drops, e.g. Lost)
+  function changeBadge(curr, prev, invertColors = false) {
+    if (!prev || prev === 0) return '<span class="text-[10px] text-slate-300 font-medium">—</span>';
+    const pct = ((curr - prev) / prev) * 100;
+    const up = pct >= 0;
+    const good = invertColors ? !up : up;
+    const color = good ? 'text-[#73be4b]' : 'text-red-400';
+    const arrow = up ? '↑' : '↓';
+    return `<span class="${color} text-[10px] font-bold bg-${good ? '[#73be4b]' : 'red-400'}/10 px-1.5 py-0.5 rounded">${arrow} ${Math.abs(pct).toFixed(1)}%</span>`;
+  }
+
+  // Win-rate change in percentage points
+  function winRateChangeBadge(curr, prev) {
+    if (prev == null) return '<span class="text-[10px] text-slate-300 font-medium">—</span>';
+    const diff = curr - prev;
+    const color = diff >= 0 ? 'text-[#73be4b]' : 'text-red-400';
+    const arrow = diff >= 0 ? '↑' : '↓';
+    return `<span class="${color} text-[10px] font-bold">${arrow} ${Math.abs(diff).toFixed(1)}pp</span>`;
+  }
+
+  // Mini sparkline SVG
+  function sparkline(key, color) {
+    if (daily.length < 2) return '';
+    const vals = daily.map(d => Number(d[key]));
+    const max = Math.max(...vals, 1);
+    const W = 80, H = 34;
+    const xs = i => (i / (vals.length - 1)) * (W - 4) + 2;
+    const ys = v => H - 3 - (v / max) * (H - 8);
+    const pts = vals.map((v, i) => `${xs(i)},${ys(v)}`).join(' L ');
+    const last = vals[vals.length - 1];
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="overflow-visible flex-shrink-0">
+      <defs><linearGradient id="sg-${key}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity="0.25"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="M ${pts} L ${xs(vals.length-1)},${H} L ${xs(0)},${H} Z" fill="url(#sg-${key})"/>
+      <polyline points="${vals.map((v,i) => `${xs(i)},${ys(v)}`).join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="${xs(vals.length-1)}" cy="${ys(last)}" r="2.5" fill="${color}" stroke="#fff" stroke-width="1.5"/>
+    </svg>`;
+  }
+
+  // Semicircle gauge for win rate
+  function winGauge(rate) {
+    const r = 22, W = 54, H = 30;
+    const cx = W / 2, cy = H;
+    const x1 = cx - r, x2 = cx + r;
+    const arcLen = Math.PI * r;
+    const dash = Math.min(rate / 100, 1) * arcLen;
+    const color = rate >= 60 ? '#73be4b' : rate >= 35 ? '#f59e0b' : '#f87171';
+    return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="overflow-visible flex-shrink-0">
+      <path d="M ${x1},${cy} A ${r},${r} 0 0,0 ${x2},${cy}" fill="none" stroke="#E2E8F0" stroke-width="5" stroke-linecap="round"/>
+      <path d="M ${x1},${cy} A ${r},${r} 0 0,0 ${x2},${cy}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round"
+        stroke-dasharray="${dash.toFixed(1)} ${(arcLen + 1).toFixed(1)}"/>
+    </svg>`;
+  }
+
+  // Mode breakdown bar + legend dots
+  const MODE_COLORS = {
+    'AIR':       '#5B86AD',
+    'OCEAN FCL': '#73be4b',
+    'OCEAN LCL': '#22c55e',
+    'OCEAN':     '#3b82f6',
+    'ROAD LTL':  '#f59e0b',
+    'ROAD FTL':  '#f97316',
+    'ROAD':      '#ef4444',
+    'Other':     '#9CA3AF',
+  };
+  const modeTotal = modes.reduce((s, m) => s + m.count, 0) || 1;
+  const modeBar = modes.length ? `
+    <div class="flex w-full h-2 rounded-full overflow-hidden gap-px mt-3 mb-2.5">
+      ${modes.map(m => `<div style="width:${(m.count/modeTotal*100).toFixed(1)}%;background:${MODE_COLORS[m.mode]||'#9CA3AF'}" title="${m.mode}: ${fmt(m.count)}"></div>`).join('')}
+    </div>
+    <div class="flex flex-wrap gap-x-3 gap-y-1.5">
+      ${modes.map(m => `
+        <div class="flex items-center gap-1">
+          <div class="size-2 rounded-sm flex-shrink-0" style="background:${MODE_COLORS[m.mode]||'#9CA3AF'}"></div>
+          <span class="text-[9px] text-slate-500">${m.mode}</span>
+          <span class="text-[9px] font-bold text-slate-600 dark:text-slate-300">${fmt(m.count)}</span>
+        </div>`).join('')}
+    </div>` : '';
+
+  const closed = c.won_conversations + c.lost_conversations;
+  const winRatePct  = closed > 0 ? ((c.won_conversations  / closed) * 100).toFixed(1) : '0.0';
+  const lossRatePct = closed > 0 ? ((c.lost_conversations / closed) * 100).toFixed(1) : '0.0';
+
+  container.innerHTML = `
+    <!-- Total Conversations -->
+    <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+      <div class="flex items-center justify-between mb-1">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Conversations</p>
+        ${changeBadge(c.total_conversations, p.total_conversations)}
+      </div>
+      <div class="flex items-end justify-between">
+        <p class="text-3xl font-bold text-primary leading-none">${fmt(c.total_conversations)}</p>
+        ${sparkline('total', '#5B86AD')}
+      </div>
+      ${modeBar}
+      ${p.total_conversations ? `<p class="text-[9px] text-slate-400 mt-2">prev period: ${fmt(p.total_conversations)}</p>` : ''}
+    </div>
+
+    <!-- Won Conversations -->
+    <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+      <div class="flex items-center justify-between mb-1">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Won Conversations</p>
+        ${changeBadge(c.won_conversations, p.won_conversations)}
+      </div>
+      <div class="flex items-end justify-between">
+        <p class="text-3xl font-bold text-[#73be4b] leading-none">${fmt(c.won_conversations)}</p>
+        ${sparkline('won', '#73be4b')}
+      </div>
+      <div class="mt-2.5 flex items-center gap-2">
+        <div class="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+          <div class="h-full rounded-full bg-[#73be4b]" style="width:${winRatePct}%"></div>
+        </div>
+        <span class="text-[10px] font-bold text-[#73be4b] flex-shrink-0">${winRatePct}% of closed</span>
+      </div>
+      ${p.won_conversations != null ? `<p class="text-[9px] text-slate-400 mt-1.5">prev period: ${fmt(p.won_conversations)}</p>` : ''}
+    </div>
+
+    <!-- Lost Conversations -->
+    <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+      <div class="flex items-center justify-between mb-1">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Lost Conversations</p>
+        ${changeBadge(c.lost_conversations, p.lost_conversations, true)}
+      </div>
+      <div class="flex items-end justify-between">
+        <p class="text-3xl font-bold text-red-400 leading-none">${fmt(c.lost_conversations)}</p>
+        ${sparkline('lost', '#f87171')}
+      </div>
+      <div class="mt-2.5 flex items-center gap-2">
+        <div class="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+          <div class="h-full rounded-full bg-red-400" style="width:${lossRatePct}%"></div>
+        </div>
+        <span class="text-[10px] font-bold text-red-400 flex-shrink-0">${lossRatePct}% of closed</span>
+      </div>
+      ${p.lost_conversations != null ? `<p class="text-[9px] text-slate-400 mt-1.5">prev period: ${fmt(p.lost_conversations)}</p>` : ''}
+    </div>
+
+    <!-- Win Rate -->
+    <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+      <div class="flex items-center justify-between mb-1">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Win Rate</p>
+        ${winRateChangeBadge(c.win_rate, p.win_rate)}
+      </div>
+      <div class="flex items-end justify-between">
+        <p class="text-3xl font-bold text-primary leading-none">${c.win_rate.toFixed(2)}%</p>
+        ${winGauge(c.win_rate)}
+      </div>
+      <p class="text-[9px] text-slate-400 mt-2.5">${closed.toLocaleString()} closed deals (${fmt(c.won_conversations)} won · ${fmt(c.lost_conversations)} lost)</p>
+      ${p.win_rate != null ? `<p class="text-[9px] text-slate-400 mt-0.5">prev period: ${p.win_rate.toFixed(1)}%</p>` : ''}
+    </div>`;
 }
 
 // ─── Render: Win Rate Chart ──────────────────────────
