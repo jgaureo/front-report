@@ -55,7 +55,7 @@
     .col-tip .tip-content .tip-title { font-weight: 700; font-size: 12px; margin-bottom: 2px; }
     .col-tip:hover .tip-content { display: block; }
   </style>
-  <script type="module" crossorigin src="./assets/index-Dt0Kb71d.js"></script>
+  <script type="module" crossorigin src="./assets/index-Cl19vpzr.js"></script>
 </head>
 <body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display min-h-screen pb-48">
 
@@ -269,32 +269,9 @@
   <!-- ═══════ PAGE: MANAGEMENT DASHBOARD ═══════ -->
   <main id="page-management-dashboard" class="page p-4 space-y-6">
 
-    <!-- KPI Cards -->
+    <!-- KPI Cards (populated by renderManagementKPIs) -->
     <div class="grid grid-cols-2 gap-3" id="mgmtKpiCards">
-      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
-        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Conversations</p>
-        <div class="flex items-end justify-between mt-1">
-          <p class="text-3xl font-bold text-primary" id="mgmt-total-conv">—</p>
-        </div>
-      </div>
-      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
-        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Won Conversations</p>
-        <div class="flex items-end justify-between mt-1">
-          <p class="text-3xl font-bold text-primary" id="mgmt-won-conv">—</p>
-        </div>
-      </div>
-      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
-        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Lost Conversations</p>
-        <div class="flex items-end justify-between mt-1">
-          <p class="text-3xl font-bold text-primary" id="mgmt-lost-conv">—</p>
-        </div>
-      </div>
-      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
-        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Win Rate</p>
-        <div class="flex items-end justify-between mt-1">
-          <p class="text-3xl font-bold text-primary" id="mgmt-win-rate">—</p>
-        </div>
-      </div>
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5 col-span-2 text-xs text-slate-400 text-center py-6">Loading…</div>
     </div>
 
     <!-- Win Rate Chart -->
