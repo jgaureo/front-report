@@ -717,7 +717,10 @@ function renderFreightBreakdown(data) {
     return `
       <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-3 flex flex-col gap-1 min-w-0">
         <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wide truncate">${d.label}</div>
-        <div class="text-xl font-extrabold text-primary leading-none">${fmt(d.total)}</div>
+        <div class="flex items-end gap-2">
+          <div class="text-xl font-extrabold text-primary leading-none">${fmt(d.total)}</div>
+          ${d.quoted > 0 ? `<div class="text-[10px] text-amber-600 font-semibold pb-0.5">${fmt(d.quoted)} quoted</div>` : ''}
+        </div>
         <div class="text-[10px] text-slate-400">${share}% of total</div>
         <div class="flex items-center gap-2 mt-1">
           <span class="text-xs font-bold text-[#73be4b]">${fmt(d.won)} Won</span>
