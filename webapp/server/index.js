@@ -776,9 +776,10 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
         SELECT
           c.id,
           LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')) AS direction,
-          MAX(CASE WHEN LOWER(t.name) = 'won'  THEN 1 ELSE 0 END) AS is_won,
-          MAX(CASE WHEN LOWER(t.name) = 'lost' THEN 1 ELSE 0 END) AS is_lost,
-          MAX(CASE WHEN LOWER(t.name) = 'fcl'  THEN 1 ELSE 0 END) AS is_fcl,
+          MAX(CASE WHEN LOWER(t.name) = 'won'    THEN 1 ELSE 0 END) AS is_won,
+          MAX(CASE WHEN LOWER(t.name) = 'lost'   THEN 1 ELSE 0 END) AS is_lost,
+          MAX(CASE WHEN LOWER(t.name) = 'quoted' THEN 1 ELSE 0 END) AS is_quoted,
+          MAX(CASE WHEN LOWER(t.name) = 'fcl'    THEN 1 ELSE 0 END) AS is_fcl,
           MAX(CASE WHEN LOWER(t.name) = 'lcl'  THEN 1 ELSE 0 END) AS is_lcl,
           MAX(CASE WHEN LOWER(t.name) = 'ltl'  THEN 1 ELSE 0 END) AS is_ltl,
           MAX(CASE WHEN LOWER(t.name) = 'ftl'  THEN 1 ELSE 0 END) AS is_ftl,
@@ -799,7 +800,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
         GROUP BY c.id, direction, qr_mode
       ),
       breakdown AS (
-        SELECT direction, mode_label, COUNT(*) AS total, SUM(is_won) AS won, SUM(is_lost) AS lost
+        SELECT direction, mode_label, COUNT(*) AS total, SUM(is_won) AS won, SUM(is_lost) AS lost, SUM(is_quoted) AS quoted
         FROM (
           SELECT direction,
             CASE
@@ -812,7 +813,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
               WHEN qr_mode='ROAD'                THEN 'ROAD'
               ELSE 'Other'
             END AS mode_label,
-            is_won, is_lost
+            is_won, is_lost, is_quoted
           FROM per_conv
           WHERE direction IN ('import','export','domestic','crosstrade')
         ) sub
@@ -823,10 +824,10 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
         FROM per_conv
         WHERE direction NOT IN ('import','export','domestic','crosstrade')
       )
-      SELECT direction, mode_label, total, won, lost
+      SELECT direction, mode_label, total, won, lost, quoted
       FROM breakdown
       UNION ALL
-      SELECT '__no_direction__', '', total, 0, 0
+      SELECT '__no_direction__', '', total, 0, 0, 0
       FROM no_dir
       ORDER BY direction, total DESC
     `;
@@ -842,7 +843,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
 
     const map = {};
     for (const d of DIRECTIONS) {
-      map[d.key] = { key: d.key, label: d.label, total: 0, won: 0, lost: 0, modes: [] };
+      map[d.key] = { key: d.key, label: d.label, total: 0, won: 0, lost: 0, quoted: 0, modes: [] };
     }
 
     let no_direction_total = 0;
@@ -853,13 +854,15 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
       }
       const d = map[r.direction];
       if (!d) continue;
-      const total = Number(r.total);
-      const won   = Number(r.won);
-      const lost  = Number(r.lost);
-      d.total += total;
-      d.won   += won;
-      d.lost  += lost;
-      d.modes.push({ label: r.mode_label, total, won, lost });
+      const total  = Number(r.total);
+      const won    = Number(r.won);
+      const lost   = Number(r.lost);
+      const quoted = Number(r.quoted);
+      d.total  += total;
+      d.won    += won;
+      d.lost   += lost;
+      d.quoted += quoted;
+      d.modes.push({ label: r.mode_label, total, won, lost, quoted });
     }
 
     const directions = DIRECTIONS.map(d => map[d.key]);

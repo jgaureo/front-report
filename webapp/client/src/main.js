@@ -712,8 +712,8 @@ function renderFreightBreakdown(data) {
   // Direction KPI cards
   const cards = directions.map(d => {
     const share    = pct(d.total, grand_total);
-    const winRate  = pct(d.won, d.won + d.lost);
-    const lossRate = pct(d.lost, d.won + d.lost);
+    const winRate  = pct(d.won, d.quoted);
+    const lossRate = pct(d.lost, d.quoted);
     return `
       <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-3 flex flex-col gap-1 min-w-0">
         <div class="text-[10px] font-bold text-slate-500 uppercase tracking-wide truncate">${d.label}</div>
@@ -736,7 +736,7 @@ function renderFreightBreakdown(data) {
   const modeRows = directions.flatMap(d =>
     d.modes.map(m => {
       const mShare   = pct(m.total, d.total);
-      const mWinRate = pct(m.won, m.won + m.lost);
+      const mWinRate = pct(m.won, m.quoted);
       return `<tr class="border-t border-slate-100 dark:border-slate-700/50">
         <td class="py-1.5 px-2 text-[11px] text-slate-500">${d.label}</td>
         <td class="py-1.5 px-2 text-[11px] font-semibold text-slate-700 dark:text-slate-300">${m.label}</td>
