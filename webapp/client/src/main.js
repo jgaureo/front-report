@@ -841,7 +841,7 @@ function renderFreightBreakdown(data) {
   const pct = (n, d) => d > 0 ? ((n / d) * 100).toFixed(1) : '0.0';
 
   // Direction KPI cards
-  const dirCards = directions.map(d => {
+  const cards = directions.map(d => {
     const share    = pct(d.total, grand_total);
     const winRate  = pct(d.won, d.quoted);
     const lossRate = pct(d.lost, d.quoted);
@@ -864,18 +864,7 @@ function renderFreightBreakdown(data) {
           <span class="text-[10px] font-semibold text-red-400">${lossRate}% loss</span>
         </div>
       </div>`;
-  });
-
-  if (no_direction_total > 0) {
-    dirCards.push(`
-      <div class="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-3 flex flex-col gap-1 min-w-0">
-        <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wide truncate">Other</div>
-        <div class="text-xl font-extrabold text-slate-400 leading-none">${fmt(no_direction_total)}</div>
-        <div class="text-[10px] text-slate-400 italic">No direction recorded</div>
-      </div>`);
-  }
-
-  const cards = dirCards.join('');
+  }).join('');
 
   // Mode breakdown table — only directions that have mode rows
   const modeRows = directions.flatMap(d =>
@@ -895,15 +884,19 @@ function renderFreightBreakdown(data) {
   ).join('');
 
   const noDirectionNote = no_direction_total > 0
-    ? `<div class="mt-3">
-        <button id="dlNoDirectionBtn" class="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 transition-colors">
-          <span class="material-symbols-outlined text-[12px]">download</span>Download Other QRNs
+    ? `<div class="mt-3 flex items-start gap-2">
+        <span class="text-[10px] text-slate-400 italic leading-relaxed">
+          * ${fmt(no_direction_total)} QRN(s) have no direction recorded and are excluded from the totals above.
+          Grand total including unclassified: ${fmt(grand_total + no_direction_total)}.
+        </span>
+        <button id="dlNoDirectionBtn" class="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 not-italic transition-colors">
+          <span class="material-symbols-outlined text-[12px]">download</span>Download
         </button>
       </div>`
     : '';
 
   container.innerHTML = `
-    <div class="grid grid-cols-2 gap-2 mb-4 sm:grid-cols-4">${cards}</div>
+    <div class="grid grid-cols-4 gap-2 mb-4">${cards}</div>
     <div class="overflow-x-auto">
       <table class="w-full text-left border-collapse">
         <thead>
