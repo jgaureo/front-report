@@ -132,6 +132,7 @@ function navigateTo(page) {
   if (page === 'pricing-dashboard' && lastTrendData) renderTrend(lastTrendData);
   if (page === 'management-dashboard' && lastWinRateData) renderWinRateChart(lastWinRateData);
   if (page === 'management-dashboard' && lastWonByMonthData) renderWonByMonth(lastWonByMonthData);
+  if (page === 'management-dashboard' && lastConvPerOwnerData) renderConvPerOwner(lastConvPerOwnerData);
 }
 
 document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -324,6 +325,7 @@ function renderTopAccounts(data) {
 let lastTrendData = null;
 let lastWinRateData = null;
 let lastWonByMonthData = null;
+let lastConvPerOwnerData = null;
 
 // ─── Render: Team Performance Table ─────────────────
 let teamData = [];
@@ -693,6 +695,202 @@ function renderWinRateChart(data) {
       const cr = svg.closest('.relative').getBoundingClientRect();
       tooltip.style.left = (e.clientX - cr.left + 12) + 'px';
       tooltip.style.top = (e.clientY - cr.top - 40) + 'px';
+    });
+    hit.addEventListener('mouseleave', () => tooltip.classList.add('hidden'));
+    svg.appendChild(hit);
+  });
+}
+
+// ─── Render: Active Conversations ────────────────────────
+function renderActiveConversations(data) {
+  const container = document.getElementById('activeConversations');
+  if (!container) return;
+  if (!data || !data.total) {
+    container.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No data</div>';
+    return;
+  }
+
+  const fmt = n => Number(n).toLocaleString();
+  const { total, open_count, waiting_count, breakdown } = data;
+
+  const STATUS_COLORS = {
+    'Contacted':       '#5B86AD',
+    'Need to Quote':   '#f59e0b',
+    'Quoted':          '#73be4b',
+    'Need to Requote': '#f97316',
+    'Need to Onboard': '#8b5cf6',
+    'Pending Review':  '#ec4899',
+    'New':             '#9CA3AF',
+  };
+
+  // Build donut chart slices
+  const R = 48, r = 28, cx = 60, cy = 60;
+  let angle = -Math.PI / 2;
+  const slicePaths = breakdown.map(b => {
+    const sweep = (b.count / total) * 2 * Math.PI;
+    const x1 = cx + R * Math.cos(angle);
+    const y1 = cy + R * Math.sin(angle);
+    angle += sweep;
+    const x2 = cx + R * Math.cos(angle);
+    const y2 = cy + R * Math.sin(angle);
+    const ix1 = cx + r * Math.cos(angle - sweep);
+    const iy1 = cy + r * Math.sin(angle - sweep);
+    const ix2 = cx + r * Math.cos(angle);
+    const iy2 = cy + r * Math.sin(angle);
+    const large = sweep > Math.PI ? 1 : 0;
+    const color = STATUS_COLORS[b.status] || '#9CA3AF';
+    return `<path d="M ${ix1},${iy1} L ${x1},${y1} A ${R},${R} 0 ${large},1 ${x2},${y2} L ${ix2},${iy2} A ${r},${r} 0 ${large},0 ${ix1},${iy1} Z" fill="${color}" stroke="white" stroke-width="1.5">
+      <title>${b.status}: ${fmt(b.count)}</title></path>`;
+  }).join('');
+
+  const pieSvg = `<svg width="120" height="120" viewBox="0 0 120 120" class="flex-shrink-0">
+    ${slicePaths}
+    <text x="60" y="55" text-anchor="middle" font-size="13" font-weight="bold" fill="#1e3063">${fmt(total)}</text>
+    <text x="60" y="67" text-anchor="middle" font-size="7.5" fill="#9CA3AF">Total</text>
+  </svg>`;
+
+  const rows = breakdown.map(b => `
+    <div class="flex items-center justify-between py-1 border-b border-slate-50 last:border-0">
+      <div class="flex items-center gap-1.5">
+        <div class="size-2 rounded-sm flex-shrink-0" style="background:${STATUS_COLORS[b.status]||'#9CA3AF'}"></div>
+        <span class="text-[10px] text-slate-500">${b.status}</span>
+      </div>
+      <span class="text-[10px] font-bold text-slate-700 dark:text-slate-300">${fmt(b.count)}</span>
+    </div>`).join('');
+
+  container.innerHTML = `
+    <div class="flex gap-3 items-start">
+      ${pieSvg}
+      <div class="flex-1 min-w-0 pt-1">${rows}</div>
+    </div>
+    <div class="flex items-center gap-4 mt-3 pt-2 border-t border-slate-100">
+      <div class="flex items-center gap-1.5">
+        <div class="size-2 rounded-full bg-[#5B86AD]"></div>
+        <span class="text-[10px] text-slate-400">Open: <span class="font-bold text-slate-600">${fmt(open_count)}</span></span>
+      </div>
+      <div class="flex items-center gap-1.5">
+        <div class="size-2 rounded-full bg-[#9CA3AF]"></div>
+        <span class="text-[10px] text-slate-400">Waiting: <span class="font-bold text-slate-600">${fmt(waiting_count)}</span></span>
+      </div>
+    </div>`;
+}
+
+// ─── Render: Conversations Per Owner ─────────────────────
+const OWNER_PALETTE = ['#1e3063','#73be4b','#5B86AD','#f59e0b','#f87171','#8b5cf6','#ec4899','#f97316','#14b8a6','#6366f1','#d946ef','#0ea5e9'];
+
+function renderConvPerOwner(data) {
+  lastConvPerOwnerData = data;
+  const svg = document.getElementById('convPerOwnerChart');
+  const tooltip = document.getElementById('convPerOwnerTooltip');
+  const legendEl = document.getElementById('convPerOwnerLegend');
+  svg.innerHTML = '';
+  if (legendEl) legendEl.innerHTML = '';
+
+  const months = data?.months || [];
+  const owners = (data?.owners || []).slice(0, 12); // cap at 12 owners
+  const dataMap = data?.data || {};
+
+  if (!months.length) {
+    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#9CA3AF" font-size="12">No data</text>';
+    return;
+  }
+
+  const ownerColor = {};
+  owners.forEach((o, i) => { ownerColor[o] = OWNER_PALETTE[i % OWNER_PALETTE.length]; });
+
+  // Legend
+  if (legendEl) {
+    legendEl.innerHTML = owners.map(o => `
+      <div class="flex items-center gap-1">
+        <div class="size-2 rounded-sm flex-shrink-0" style="background:${ownerColor[o]}"></div>
+        <span class="text-[9px] text-slate-500">${o}</span>
+      </div>`).join('');
+  }
+
+  const W = svg.getBoundingClientRect().width || 560;
+  const H = 240;
+  const PAD = { top: 24, right: 12, bottom: 32, left: 36 };
+  const chartW = W - PAD.left - PAD.right;
+  const chartH = H - PAD.top - PAD.bottom;
+
+  // Per-month totals
+  const monthTotals = months.map(m => owners.reduce((s, o) => s + (dataMap[m]?.[o] || 0), 0));
+  const maxTotal = Math.max(...monthTotals, 1);
+
+  const barW = Math.min(40, (chartW / months.length) * 0.6);
+  const barGap = chartW / months.length;
+  const NS = 'http://www.w3.org/2000/svg';
+
+  // Y gridlines + labels
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const v = Math.round((maxTotal / ticks) * i);
+    const y = PAD.top + chartH - (v / maxTotal) * chartH;
+    const line = document.createElementNS(NS, 'line');
+    line.setAttribute('x1', PAD.left); line.setAttribute('x2', PAD.left + chartW);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('stroke', '#E2E8F0'); line.setAttribute('stroke-width', '0.5');
+    svg.appendChild(line);
+    const lbl = document.createElementNS(NS, 'text');
+    lbl.setAttribute('x', PAD.left - 4); lbl.setAttribute('y', y + 3);
+    lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('font-size', '8'); lbl.setAttribute('fill', '#9CA3AF');
+    lbl.textContent = v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v;
+    svg.appendChild(lbl);
+  }
+
+  // Bars + x labels
+  months.forEach((m, mi) => {
+    const barX = PAD.left + mi * barGap + (barGap - barW) / 2;
+    let stackY = PAD.top + chartH;
+
+    owners.forEach(o => {
+      const cnt = dataMap[m]?.[o] || 0;
+      if (!cnt) return;
+      const bH = (cnt / maxTotal) * chartH;
+      const rect = document.createElementNS(NS, 'rect');
+      rect.setAttribute('x', barX); rect.setAttribute('y', stackY - bH);
+      rect.setAttribute('width', barW); rect.setAttribute('height', bH);
+      rect.setAttribute('fill', ownerColor[o]); rect.setAttribute('rx', '1');
+      svg.appendChild(rect);
+      stackY -= bH;
+    });
+
+    // Total label on top
+    const total = monthTotals[mi];
+    if (total > 0) {
+      const topY = PAD.top + chartH - (total / maxTotal) * chartH - 4;
+      const lbl = document.createElementNS(NS, 'text');
+      lbl.setAttribute('x', barX + barW / 2); lbl.setAttribute('y', topY);
+      lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('font-size', '8');
+      lbl.setAttribute('font-weight', 'bold'); lbl.setAttribute('fill', '#475569');
+      lbl.textContent = total;
+      svg.appendChild(lbl);
+    }
+
+    // X-axis label
+    const xLbl = document.createElementNS(NS, 'text');
+    xLbl.setAttribute('x', barX + barW / 2);
+    xLbl.setAttribute('y', PAD.top + chartH + 12);
+    xLbl.setAttribute('text-anchor', 'middle'); xLbl.setAttribute('font-size', '8'); xLbl.setAttribute('fill', '#94A3B8');
+    const [yr, mo] = m.split('-');
+    xLbl.textContent = new Date(+yr, +mo - 1, 1).toLocaleString('en-US', { month: 'short' }) + " '" + yr.slice(2);
+    svg.appendChild(xLbl);
+
+    // Invisible hit area for tooltip
+    const hit = document.createElementNS(NS, 'rect');
+    hit.setAttribute('x', barX); hit.setAttribute('y', PAD.top);
+    hit.setAttribute('width', barW); hit.setAttribute('height', chartH);
+    hit.setAttribute('fill', 'transparent');
+    hit.addEventListener('mouseenter', () => {
+      const lines = owners.filter(o => (dataMap[m]?.[o] || 0) > 0)
+        .map(o => `<div><span style="color:${ownerColor[o]}">■</span> ${o}: <b>${(dataMap[m][o] || 0).toLocaleString()}</b></div>`).join('');
+      tooltip.innerHTML = `<div class="font-bold mb-1">${xLbl.textContent}</div>${lines}<div class="mt-1 pt-1 border-t border-white/20 font-bold">Total: ${total.toLocaleString()}</div>`;
+      tooltip.classList.remove('hidden');
+      const cx = barX + barW / 2;
+      let left = cx + 8;
+      if (left + 140 > W) left = cx - 148;
+      tooltip.style.left = left + 'px';
+      tooltip.style.top = (PAD.top + chartH / 3) + 'px';
     });
     hit.addEventListener('mouseleave', () => tooltip.classList.add('hidden'));
     svg.appendChild(hit);
@@ -1154,6 +1352,40 @@ document.querySelectorAll('.dl-btn').forEach(btn => {
         return;
       }
 
+      if (type === 'management-active-conversations') {
+        const data = await api(`/api/management-active-conversations?${qs()}`);
+        const rows = [['Status', 'Count']];
+        for (const b of (data.breakdown || [])) rows.push([b.status, b.count]);
+        rows.push(['', ''], ['Open', data.open_count], ['Waiting', data.waiting_count], ['Total', data.total]);
+        const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'active-conversations.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        return;
+      }
+
+      if (type === 'management-conv-per-owner') {
+        const data = await api(`/api/management-conv-per-owner?${qs()}`);
+        const owners = data.owners || [];
+        const rows = [['Month', ...owners, 'Total']];
+        for (const m of (data.months || [])) {
+          const rowData = data.data[m] || {};
+          const total = owners.reduce((s, o) => s + (rowData[o] || 0), 0);
+          rows.push([m, ...owners.map(o => rowData[o] || 0), total]);
+        }
+        const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'conversations-per-owner.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        return;
+      }
+
       const useDateRange = type !== 'pending-replies';
       let url = `${API_BASE_URL}/api/download-conversations?type=${type}`;
       if (useDateRange) url += `&${qs()}`;
@@ -1216,7 +1448,7 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth, activeConv, convPerOwner] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
@@ -1227,6 +1459,8 @@ async function loadAll() {
       api(`/api/management-win-rate?${q}`),
       api(`/api/management-freight-breakdown?${q}`).catch(() => null),
       api(`/api/management-won-by-month?${q}`).catch(() => null),
+      api(`/api/management-active-conversations?${q}`).catch(() => null),
+      api(`/api/management-conv-per-owner?${q}`).catch(() => null),
     ]);
 
     teamSchedules = schedules || {};
@@ -1242,6 +1476,8 @@ async function loadAll() {
     renderWinRateChart(winRate);
     renderWonByMonth(wonByMonth);
     renderFreightBreakdown(freightBreakdown);
+    renderActiveConversations(activeConv);
+    renderConvPerOwner(convPerOwner);
   } catch (err) {
     console.error('Load error:', err);
   } finally {

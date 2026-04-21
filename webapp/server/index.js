@@ -991,7 +991,108 @@ app.get('/api/management-won-by-month', async (req, res) => {
   }
 });
 
-// ─── 11. Global Search ───────────────────────────────────
+// ─── 11. Management Active Conversations ─────────────────
+app.get('/api/management-active-conversations', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const sql = `
+      WITH active_convs AS (
+        SELECT
+          c.id,
+          c.status,
+          MAX(CASE WHEN LOWER(t.name) = 'contacted'       THEN 1 ELSE 0 END) AS is_contacted,
+          MAX(CASE WHEN LOWER(t.name) = 'need to quote'   THEN 1 ELSE 0 END) AS is_need_to_quote,
+          MAX(CASE WHEN LOWER(t.name) = 'quoted'          THEN 1 ELSE 0 END) AS is_quoted,
+          MAX(CASE WHEN LOWER(t.name) = 'need to requote' THEN 1 ELSE 0 END) AS is_need_to_requote,
+          MAX(CASE WHEN LOWER(t.name) = 'need to onboard' THEN 1 ELSE 0 END) AS is_need_to_onboard,
+          MAX(CASE WHEN LOWER(t.name) = 'pending review'  THEN 1 ELSE 0 END) AS is_pending_review
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+          AND c.status IN ('assigned','unassigned')
+        GROUP BY c.id, c.status
+      )
+      SELECT
+        COUNT(DISTINCT id)                                                   AS total,
+        COUNT(DISTINCT CASE WHEN status = 'assigned'   THEN id END)         AS open_count,
+        COUNT(DISTINCT CASE WHEN status = 'unassigned' THEN id END)         AS waiting_count,
+        COUNT(DISTINCT CASE WHEN is_contacted = 1      THEN id END)         AS contacted,
+        COUNT(DISTINCT CASE WHEN is_need_to_quote = 1  THEN id END)         AS need_to_quote,
+        COUNT(DISTINCT CASE WHEN is_quoted = 1         THEN id END)         AS quoted,
+        COUNT(DISTINCT CASE WHEN is_need_to_requote = 1 THEN id END)        AS need_to_requote,
+        COUNT(DISTINCT CASE WHEN is_need_to_onboard = 1 THEN id END)        AS need_to_onboard,
+        COUNT(DISTINCT CASE WHEN is_pending_review = 1 THEN id END)         AS pending_review,
+        COUNT(DISTINCT CASE WHEN is_contacted = 0 AND is_need_to_quote = 0
+                                 AND is_quoted = 0 AND is_need_to_requote = 0
+                                 AND is_need_to_onboard = 0 AND is_pending_review = 0
+                            THEN id END)                                     AS untagged
+      FROM active_convs
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+    const r = rows[0] || {};
+    const breakdown = [
+      { status: 'Contacted',       count: Number(r.contacted      || 0) },
+      { status: 'Need to Quote',   count: Number(r.need_to_quote  || 0) },
+      { status: 'Quoted',          count: Number(r.quoted         || 0) },
+      { status: 'Need to Requote', count: Number(r.need_to_requote|| 0) },
+      { status: 'Need to Onboard', count: Number(r.need_to_onboard|| 0) },
+      { status: 'Pending Review',  count: Number(r.pending_review || 0) },
+      { status: 'New',             count: Number(r.untagged       || 0) },
+    ].filter(b => b.count > 0).sort((a, b) => b.count - a.count);
+    res.json({
+      total:         Number(r.total         || 0),
+      open_count:    Number(r.open_count    || 0),
+      waiting_count: Number(r.waiting_count || 0),
+      breakdown,
+    });
+  } catch (err) {
+    console.error('management-active-conversations error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 12. Management Conversations Per Owner ───────────────
+app.get('/api/management-conv-per-owner', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const sql = `
+      SELECT
+        FORMAT_TIMESTAMP('%Y-%m', c.created_at, '${TZ}') AS month,
+        COALESCE(CONCAT(tm.first_name, ' ', tm.last_name), 'Unassigned') AS owner,
+        COUNT(DISTINCT c.id) AS conv_count
+      FROM \`${FRONT}.conversation\` c
+      ${SALES_INBOX_FILTER}
+      LEFT JOIN \`${FRONT}.teammate\` tm ON tm.id = c.teammate_id
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+      GROUP BY month, owner
+      ORDER BY month, conv_count DESC
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+
+    const monthSet = new Set();
+    const ownerTotals = {};
+    const dataMap = {};
+    for (const r of rows) {
+      const m = r.month;
+      const o = r.owner;
+      const cnt = Number(r.conv_count);
+      monthSet.add(m);
+      ownerTotals[o] = (ownerTotals[o] || 0) + cnt;
+      if (!dataMap[m]) dataMap[m] = {};
+      dataMap[m][o] = cnt;
+    }
+    const months = [...monthSet].sort();
+    const owners = Object.keys(ownerTotals).sort((a, b) => ownerTotals[b] - ownerTotals[a]);
+    res.json({ months, owners, data: dataMap });
+  } catch (err) {
+    console.error('management-conv-per-owner error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 13. Global Search ──────────────────────────────────
 app.get('/api/search', async (req, res) => {
   try {
     const keyword = (req.query.q || '').trim();
