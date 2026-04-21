@@ -718,9 +718,39 @@ function renderWonByMonth(data) {
 
   // Footnote for won conversations with no QRN
   if (noteEl && no_qrn_total > 0) {
-    noteEl.innerHTML = `<div class="mt-3 text-[10px] text-slate-400 italic leading-relaxed">
-      * ${no_qrn_total.toLocaleString()} won conversation(s) have no QRN attached and are excluded from the chart above.
+    noteEl.innerHTML = `<div class="mt-3 flex items-start gap-2">
+      <span class="text-[10px] text-slate-400 italic leading-relaxed">
+        * ${no_qrn_total.toLocaleString()} won conversation(s) have no QRN attached and are excluded from the chart above.
+      </span>
+      <button id="dlNoQrnWonBtn" class="flex-shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 not-italic transition-colors">
+        <span class="material-symbols-outlined text-[12px]">download</span>Download
+      </button>
     </div>`;
+
+    const dlBtn = noteEl.querySelector('#dlNoQrnWonBtn');
+    if (dlBtn) {
+      dlBtn.addEventListener('click', async () => {
+        dlBtn.disabled = true;
+        dlBtn.innerHTML = `<span class="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>`;
+        try {
+          const rows_data = await api(`/api/management-no-qrn-won?${qs()}`);
+          const csvRows = [['Conversation ID']];
+          for (const r of rows_data) csvRows.push([r.conversation_id]);
+          const csv = csvRows.map(r => r.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',')).join('\n');
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'won-no-qrn-conversations.csv';
+          a.click();
+          URL.revokeObjectURL(a.href);
+        } catch (err) {
+          console.error('No-QRN won download error:', err);
+        } finally {
+          dlBtn.disabled = false;
+          dlBtn.innerHTML = `<span class="material-symbols-outlined text-[12px]">download</span>Download`;
+        }
+      });
+    }
   }
 
   const COLORS = { domestic: '#1e3063', import: '#5B86AD', export: '#73be4b', crosstrade: '#f87171', other: '#9CA3AF' };

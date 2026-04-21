@@ -900,6 +900,30 @@ app.get('/api/management-no-direction', async (req, res) => {
   }
 });
 
+// ─── 10a. Management No-QRN Won Conversations ────────────
+app.get('/api/management-no-qrn-won', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const sql = `
+      SELECT DISTINCT c.id AS conversation_id
+      FROM \`${FRONT}.conversation\` c
+      ${SALES_INBOX_FILTER}
+      INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+      INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'won'
+      LEFT JOIN \`${AI}.email_quote_requests\` q
+        ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        AND q.quote_request_number IS NULL
+      ORDER BY c.id
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+    res.json(rows.map(r => ({ conversation_id: r.conversation_id })));
+  } catch (err) {
+    console.error('management-no-qrn-won error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── 10. Management Won Conversations by Direction ───────
 app.get('/api/management-won-by-month', async (req, res) => {
   try {
