@@ -900,7 +900,64 @@ app.get('/api/management-no-direction', async (req, res) => {
   }
 });
 
-// ─── 10. Global Search ───────────────────────────────────
+// ─── 10. Management Won Deals by Month ──────────────────
+app.get('/api/management-won-by-month', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const sql = `
+      WITH won_events AS (
+        -- Find the earliest time the 'won' tag was applied within the date range
+        SELECT
+          cth.conversation_id,
+          MIN(cth.updated_at) AS won_at
+        FROM \`${FRONT}.conversation_tag_history\` cth
+        INNER JOIN \`${FRONT}.tag\` t ON t.id = cth.tag_id AND LOWER(t.name) = 'won'
+        WHERE cth.updated_at >= TIMESTAMP(@start) AND cth.updated_at <= TIMESTAMP(@end)
+        GROUP BY cth.conversation_id
+      ),
+      direction_per_conv AS (
+        SELECT
+          q.front_conversation_id AS conversation_id,
+          LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')) AS direction
+        FROM \`${AI}.email_quote_requests\` q
+        WHERE q.quote_request_number IS NOT NULL
+        GROUP BY q.front_conversation_id, direction
+      )
+      SELECT
+        FORMAT_TIMESTAMP('%Y-%m', we.won_at, '${TZ}') AS month,
+        COALESCE(dpc.direction, '') AS direction,
+        COUNT(DISTINCT we.conversation_id) AS won_count
+      FROM won_events we
+      INNER JOIN \`${FRONT}.conversation\` c ON c.id = we.conversation_id
+      ${SALES_INBOX_FILTER}
+      LEFT JOIN direction_per_conv dpc ON dpc.conversation_id = we.conversation_id
+      GROUP BY month, direction
+      ORDER BY month, direction
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+
+    const monthMap = {};
+    for (const r of rows) {
+      const m = r.month;
+      if (!monthMap[m]) monthMap[m] = { month: m, import: 0, export: 0, domestic: 0, crosstrade: 0, other: 0, total: 0 };
+      const dir = r.direction;
+      const cnt = Number(r.won_count);
+      if      (dir === 'import')     monthMap[m].import     += cnt;
+      else if (dir === 'export')     monthMap[m].export     += cnt;
+      else if (dir === 'domestic')   monthMap[m].domestic   += cnt;
+      else if (dir === 'crosstrade') monthMap[m].crosstrade += cnt;
+      else                           monthMap[m].other      += cnt;
+      monthMap[m].total += cnt;
+    }
+
+    res.json(Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month)));
+  } catch (err) {
+    console.error('management-won-by-month error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 11. Global Search ───────────────────────────────────
 app.get('/api/search', async (req, res) => {
   try {
     const keyword = (req.query.q || '').trim();

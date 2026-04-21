@@ -131,6 +131,7 @@ function navigateTo(page) {
   // Re-render SVG charts now that the page is visible and has real dimensions
   if (page === 'pricing-dashboard' && lastTrendData) renderTrend(lastTrendData);
   if (page === 'management-dashboard' && lastWinRateData) renderWinRateChart(lastWinRateData);
+  if (page === 'management-dashboard' && lastWonByMonthData) renderWonByMonth(lastWonByMonthData);
 }
 
 document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -322,6 +323,7 @@ function renderTopAccounts(data) {
 // ─── Chart data cache (for re-render on tab switch) ──
 let lastTrendData = null;
 let lastWinRateData = null;
+let lastWonByMonthData = null;
 
 // ─── Render: Team Performance Table ─────────────────
 let teamData = [];
@@ -697,6 +699,135 @@ function renderWinRateChart(data) {
   });
 }
 
+// ─── Render: Won Deals by Month ─────────────────────────
+function renderWonByMonth(data) {
+  lastWonByMonthData = data;
+  const svg = document.getElementById('wonByMonthChart');
+  const tooltip = document.getElementById('wonByMonthTooltip');
+  svg.innerHTML = '';
+  if (!data || !data.length) {
+    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#9CA3AF" font-size="12">No data</text>';
+    return;
+  }
+
+  const COLORS = { domestic: '#1e3063', import: '#5B86AD', export: '#73be4b', crosstrade: '#f87171', other: '#9CA3AF' };
+  const STACK_KEYS = ['other', 'crosstrade', 'export', 'import', 'domestic']; // bottom → top
+
+  const W = svg.getBoundingClientRect().width || 600;
+  const H = 240;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const pad = { t: 24, r: 16, b: 36, l: 40 };
+  const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+
+  const maxV = Math.max(...data.map(d => d.total), 1);
+  const slotW = cw / data.length;
+  const barW = Math.max(6, Math.min(40, slotW * 0.55));
+  const xCenter = i => pad.l + i * slotW + slotW / 2;
+  const yPos = v => pad.t + ch - (v / maxV) * ch;
+
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // Grid lines + Y labels
+  for (let i = 0; i <= 4; i++) {
+    const yy = pad.t + (ch / 4) * i;
+    const gl = document.createElementNS(ns, 'line');
+    Object.entries({ x1: pad.l, x2: W - pad.r, y1: yy, y2: yy, stroke: '#F3F4F6', 'stroke-width': 1 }).forEach(([k, v]) => gl.setAttribute(k, v));
+    svg.appendChild(gl);
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', pad.l - 6); lbl.setAttribute('y', yy + 3);
+    lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('fill', '#9CA3AF'); lbl.setAttribute('font-size', '9');
+    lbl.textContent = Math.round(maxV - (maxV / 4) * i);
+    svg.appendChild(lbl);
+  }
+
+  // Stacked bars
+  data.forEach((d, i) => {
+    let stackBase = pad.t + ch;
+    for (const key of STACK_KEYS) {
+      const v = d[key] || 0;
+      if (v === 0) continue;
+      const bH = (v / maxV) * ch;
+      stackBase -= bH;
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', xCenter(i) - barW / 2);
+      rect.setAttribute('y', stackBase);
+      rect.setAttribute('width', barW);
+      rect.setAttribute('height', bH);
+      rect.setAttribute('fill', COLORS[key]);
+      svg.appendChild(rect);
+    }
+    // Total label on top
+    if (d.total > 0) {
+      const lbl = document.createElementNS(ns, 'text');
+      lbl.setAttribute('x', xCenter(i));
+      lbl.setAttribute('y', yPos(d.total) - 4);
+      lbl.setAttribute('text-anchor', 'middle');
+      lbl.setAttribute('fill', '#475569');
+      lbl.setAttribute('font-size', '8');
+      lbl.setAttribute('font-weight', 'bold');
+      lbl.textContent = d.total;
+      svg.appendChild(lbl);
+    }
+  });
+
+  // Line overlay for total
+  if (data.length > 1) {
+    let lineD = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xCenter(i)} ${yPos(d.total)}`).join(' ');
+    const linePath = document.createElementNS(ns, 'path');
+    linePath.setAttribute('d', lineD);
+    linePath.setAttribute('fill', 'none');
+    linePath.setAttribute('stroke', '#f59e0b');
+    linePath.setAttribute('stroke-width', '2');
+    linePath.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(linePath);
+
+    data.forEach((d, i) => {
+      const dot = document.createElementNS(ns, 'circle');
+      dot.setAttribute('cx', xCenter(i)); dot.setAttribute('cy', yPos(d.total));
+      dot.setAttribute('r', '3'); dot.setAttribute('fill', '#f59e0b');
+      dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '1.5');
+      svg.appendChild(dot);
+    });
+  }
+
+  // X-axis month labels
+  const showYear = data.length > 0 && (new Set(data.map(d => d.month.slice(0, 4))).size > 1 || data.length <= 6);
+  data.forEach((d, i) => {
+    const [yr, mo] = d.month.split('-');
+    const dt = new Date(Number(yr), Number(mo) - 1, 1);
+    const label = dt.toLocaleDateString('en-US', { month: 'short' }) + (showYear ? ` '${yr.slice(2)}` : '');
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', xCenter(i)); lbl.setAttribute('y', H - 6);
+    lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('fill', '#9CA3AF'); lbl.setAttribute('font-size', '8');
+    lbl.textContent = label;
+    svg.appendChild(lbl);
+  });
+
+  // Hover hit areas
+  data.forEach((d, i) => {
+    const hit = document.createElementNS(ns, 'rect');
+    hit.setAttribute('x', xCenter(i) - slotW / 2); hit.setAttribute('y', pad.t);
+    hit.setAttribute('width', slotW); hit.setAttribute('height', ch);
+    hit.setAttribute('fill', 'transparent');
+    hit.addEventListener('mouseenter', () => {
+      tooltip.classList.remove('hidden');
+      const [yr, mo] = d.month.split('-');
+      const mLabel = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      tooltip.innerHTML = `<strong>${mLabel}</strong><br>Total Won: ${d.total}<br>` +
+        `Import: ${d.import} &nbsp; Export: ${d.export}<br>` +
+        `Domestic: ${d.domestic} &nbsp; F-to-F: ${d.crosstrade}` +
+        (d.other > 0 ? `<br>Other: ${d.other}` : '');
+    });
+    hit.addEventListener('mousemove', e => {
+      const cr = svg.closest('.relative').getBoundingClientRect();
+      tooltip.style.left = (e.clientX - cr.left + 12) + 'px';
+      tooltip.style.top = (e.clientY - cr.top - 40) + 'px';
+    });
+    hit.addEventListener('mouseleave', () => tooltip.classList.add('hidden'));
+    svg.appendChild(hit);
+  });
+}
+
 // ─── Render: Freight Breakdown ───────────────────────────
 function renderFreightBreakdown(data) {
   const container = document.getElementById('freightBreakdown');
@@ -1027,7 +1158,7 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
@@ -1037,6 +1168,7 @@ async function loadAll() {
       api(`/api/management-kpis?${q}`),
       api(`/api/management-win-rate?${q}`),
       api(`/api/management-freight-breakdown?${q}`).catch(() => null),
+      api(`/api/management-won-by-month?${q}`).catch(() => null),
     ]);
 
     teamSchedules = schedules || {};
@@ -1050,6 +1182,7 @@ async function loadAll() {
     renderTeamDirectory(team);
     renderManagementKPIs(mgmtKpis);
     renderWinRateChart(winRate);
+    renderWonByMonth(wonByMonth);
     renderFreightBreakdown(freightBreakdown);
   } catch (err) {
     console.error('Load error:', err);
