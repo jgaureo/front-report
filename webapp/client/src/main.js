@@ -699,15 +699,28 @@ function renderWinRateChart(data) {
   });
 }
 
-// ─── Render: Won Deals by Month ─────────────────────────
+// ─── Render: Won Conversation by Direction ───────────────
 function renderWonByMonth(data) {
   lastWonByMonthData = data;
   const svg = document.getElementById('wonByMonthChart');
   const tooltip = document.getElementById('wonByMonthTooltip');
+  const noteEl = document.getElementById('wonByMonthNote');
   svg.innerHTML = '';
-  if (!data || !data.length) {
+  if (noteEl) noteEl.innerHTML = '';
+
+  const months = data?.months || [];
+  const no_qrn_total = data?.no_qrn_total || 0;
+
+  if (!months.length) {
     svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#9CA3AF" font-size="12">No data</text>';
     return;
+  }
+
+  // Footnote for won conversations with no QRN
+  if (noteEl && no_qrn_total > 0) {
+    noteEl.innerHTML = `<div class="mt-3 text-[10px] text-slate-400 italic leading-relaxed">
+      * ${no_qrn_total.toLocaleString()} won conversation(s) have no QRN attached and are excluded from the chart above.
+    </div>`;
   }
 
   const COLORS = { domestic: '#1e3063', import: '#5B86AD', export: '#73be4b', crosstrade: '#f87171', other: '#9CA3AF' };
@@ -719,8 +732,8 @@ function renderWonByMonth(data) {
   const pad = { t: 24, r: 16, b: 36, l: 40 };
   const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
 
-  const maxV = Math.max(...data.map(d => d.total), 1);
-  const slotW = cw / data.length;
+  const maxV = Math.max(...months.map(d => d.total), 1);
+  const slotW = cw / months.length;
   const barW = Math.max(6, Math.min(40, slotW * 0.55));
   const xCenter = i => pad.l + i * slotW + slotW / 2;
   const yPos = v => pad.t + ch - (v / maxV) * ch;
@@ -741,7 +754,7 @@ function renderWonByMonth(data) {
   }
 
   // Stacked bars
-  data.forEach((d, i) => {
+  months.forEach((d, i) => {
     let stackBase = pad.t + ch;
     for (const key of STACK_KEYS) {
       const v = d[key] || 0;
@@ -771,8 +784,8 @@ function renderWonByMonth(data) {
   });
 
   // Line overlay for total
-  if (data.length > 1) {
-    let lineD = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xCenter(i)} ${yPos(d.total)}`).join(' ');
+  if (months.length > 1) {
+    let lineD = months.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xCenter(i)} ${yPos(d.total)}`).join(' ');
     const linePath = document.createElementNS(ns, 'path');
     linePath.setAttribute('d', lineD);
     linePath.setAttribute('fill', 'none');
@@ -781,7 +794,7 @@ function renderWonByMonth(data) {
     linePath.setAttribute('stroke-linejoin', 'round');
     svg.appendChild(linePath);
 
-    data.forEach((d, i) => {
+    months.forEach((d, i) => {
       const dot = document.createElementNS(ns, 'circle');
       dot.setAttribute('cx', xCenter(i)); dot.setAttribute('cy', yPos(d.total));
       dot.setAttribute('r', '3'); dot.setAttribute('fill', '#f59e0b');
@@ -791,8 +804,8 @@ function renderWonByMonth(data) {
   }
 
   // X-axis month labels
-  const showYear = data.length > 0 && (new Set(data.map(d => d.month.slice(0, 4))).size > 1 || data.length <= 6);
-  data.forEach((d, i) => {
+  const showYear = months.length > 0 && (new Set(months.map(d => d.month.slice(0, 4))).size > 1 || months.length <= 6);
+  months.forEach((d, i) => {
     const [yr, mo] = d.month.split('-');
     const dt = new Date(Number(yr), Number(mo) - 1, 1);
     const label = dt.toLocaleDateString('en-US', { month: 'short' }) + (showYear ? ` '${yr.slice(2)}` : '');
@@ -804,7 +817,7 @@ function renderWonByMonth(data) {
   });
 
   // Hover hit areas
-  data.forEach((d, i) => {
+  months.forEach((d, i) => {
     const hit = document.createElementNS(ns, 'rect');
     hit.setAttribute('x', xCenter(i) - slotW / 2); hit.setAttribute('y', pad.t);
     hit.setAttribute('width', slotW); hit.setAttribute('height', ch);
@@ -1099,12 +1112,13 @@ document.querySelectorAll('.dl-btn').forEach(btn => {
       if (type === 'management-won-by-month') {
         const data = await api(`/api/management-won-by-month?${qs()}`);
         const rows = [['Month', 'Domestic', 'Import', 'Export', 'Cross-Trade', 'Other', 'Total']];
-        for (const d of data) rows.push([d.month, d.domestic, d.import, d.export, d.crosstrade, d.other, d.total]);
+        for (const d of (data.months || [])) rows.push([d.month, d.domestic, d.import, d.export, d.crosstrade, d.other, d.total]);
+        if (data.no_qrn_total > 0) rows.push(['* Won conversations with no QRN (excluded from chart)', '', '', '', '', '', data.no_qrn_total]);
         const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
         const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = 'won-deals-by-month.csv';
+        a.download = 'won-conversations-by-direction.csv';
         a.click();
         URL.revokeObjectURL(a.href);
         return;

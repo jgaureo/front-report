@@ -900,44 +900,51 @@ app.get('/api/management-no-direction', async (req, res) => {
   }
 });
 
-// ─── 10. Management Won Deals by Month ──────────────────
+// ─── 10. Management Won Conversations by Direction ───────
 app.get('/api/management-won-by-month', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const sql = `
-      WITH won_events AS (
-        -- Find the earliest time the 'won' tag was applied within the date range
+      WITH won_qrns AS (
+        -- QRN-level won deals: same logic as management-kpis
         SELECT
-          cth.conversation_id,
-          MIN(cth.updated_at) AS won_at
-        FROM \`${FRONT}.conversation_tag_history\` cth
-        INNER JOIN \`${FRONT}.tag\` t ON t.id = cth.tag_id AND LOWER(t.name) = 'won'
-        WHERE cth.updated_at >= TIMESTAMP(@start) AND cth.updated_at <= TIMESTAMP(@end)
-        GROUP BY cth.conversation_id
-      ),
-      direction_per_conv AS (
-        SELECT
-          q.front_conversation_id AS conversation_id,
+          FORMAT_TIMESTAMP('%Y-%m', c.created_at, '${TZ}') AS month,
+          q.quote_request_number AS qrn,
           LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')) AS direction
-        FROM \`${AI}.email_quote_requests\` q
-        WHERE q.quote_request_number IS NOT NULL
-        GROUP BY q.front_conversation_id, direction
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        INNER JOIN \`${AI}.email_quote_requests\` q
+          ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+        INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'won'
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        GROUP BY month, qrn, direction
+      ),
+      no_qrn AS (
+        -- Won conversations in Sales inbox with no QRN attached
+        SELECT COUNT(DISTINCT c.id) AS total
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'won'
+        LEFT JOIN \`${AI}.email_quote_requests\` q
+          ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+          AND q.quote_request_number IS NULL
       )
-      SELECT
-        FORMAT_TIMESTAMP('%Y-%m', we.won_at, '${TZ}') AS month,
-        COALESCE(dpc.direction, '') AS direction,
-        COUNT(DISTINCT we.conversation_id) AS won_count
-      FROM won_events we
-      INNER JOIN \`${FRONT}.conversation\` c ON c.id = we.conversation_id
-      ${SALES_INBOX_FILTER}
-      LEFT JOIN direction_per_conv dpc ON dpc.conversation_id = we.conversation_id
+      SELECT month, direction, COUNT(DISTINCT qrn) AS won_count
+      FROM won_qrns
       GROUP BY month, direction
+      UNION ALL
+      SELECT '__no_qrn__', '', total FROM no_qrn
       ORDER BY month, direction
     `;
     const rows = await runQuery(sql, { start: startStr, end: endStr });
 
+    let no_qrn_total = 0;
     const monthMap = {};
     for (const r of rows) {
+      if (r.month === '__no_qrn__') { no_qrn_total = Number(r.won_count); continue; }
       const m = r.month;
       if (!monthMap[m]) monthMap[m] = { month: m, import: 0, export: 0, domestic: 0, crosstrade: 0, other: 0, total: 0 };
       const dir = r.direction;
@@ -950,7 +957,10 @@ app.get('/api/management-won-by-month', async (req, res) => {
       monthMap[m].total += cnt;
     }
 
-    res.json(Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month)));
+    res.json({
+      months: Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month)),
+      no_qrn_total,
+    });
   } catch (err) {
     console.error('management-won-by-month error:', err);
     res.status(500).json({ error: err.message });
