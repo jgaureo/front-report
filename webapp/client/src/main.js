@@ -723,8 +723,8 @@ function renderActiveConversations(data) {
     'New':             '#9CA3AF',
   };
 
-  // Build donut chart slices
-  const R = 48, r = 28, cx = 60, cy = 60;
+  // Build donut chart slices (responsive full-width)
+  const R = 75, r = 46, cx = 100, cy = 100;
   let angle = -Math.PI / 2;
   const slicePaths = breakdown.map(b => {
     const sweep = (b.count / total) * 2 * Math.PI;
@@ -743,10 +743,10 @@ function renderActiveConversations(data) {
       <title>${b.status}: ${fmt(b.count)}</title></path>`;
   }).join('');
 
-  const pieSvg = `<svg width="120" height="120" viewBox="0 0 120 120" class="flex-shrink-0">
+  const pieSvg = `<svg width="100%" viewBox="0 0 200 200" class="block">
     ${slicePaths}
-    <text x="60" y="55" text-anchor="middle" font-size="13" font-weight="bold" fill="#1e3063">${fmt(total)}</text>
-    <text x="60" y="67" text-anchor="middle" font-size="7.5" fill="#9CA3AF">Total</text>
+    <text x="100" y="94" text-anchor="middle" font-size="20" font-weight="bold" fill="#1e3063">${fmt(total)}</text>
+    <text x="100" y="110" text-anchor="middle" font-size="11" fill="#9CA3AF">Total</text>
   </svg>`;
 
   const rows = breakdown.map(b => `
@@ -759,10 +759,8 @@ function renderActiveConversations(data) {
     </div>`).join('');
 
   container.innerHTML = `
-    <div class="flex gap-3 items-start">
-      ${pieSvg}
-      <div class="flex-1 min-w-0 pt-1">${rows}</div>
-    </div>
+    ${pieSvg}
+    <div class="mt-2">${rows}</div>
     <div class="flex items-center gap-4 mt-3 pt-2 border-t border-slate-100">
       <div class="flex items-center gap-1.5">
         <div class="size-2 rounded-full bg-[#5B86AD]"></div>
