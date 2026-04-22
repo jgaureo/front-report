@@ -464,12 +464,14 @@ function renderManagementKPIs(data) {
     return `<span class="${color} text-[10px] font-bold bg-${good ? '[#73be4b]' : 'red-400'}/10 px-1.5 py-0.5 rounded">${arrow} ${Math.abs(pct).toFixed(1)}%</span>`;
   }
 
-  // Win-rate change in percentage points
-  function winRateChangeBadge(curr, prev) {
+  // Win-rate change in percentage points (invertColors=true → green when rate drops, for Lost Rate)
+  function winRateChangeBadge(curr, prev, invertColors = false) {
     if (prev == null) return '<span class="text-[10px] text-slate-300 font-medium">—</span>';
     const diff = curr - prev;
-    const color = diff >= 0 ? 'text-[#73be4b]' : 'text-red-400';
-    const arrow = diff >= 0 ? '↑' : '↓';
+    const up = diff >= 0;
+    const good = invertColors ? !up : up;
+    const color = good ? 'text-[#73be4b]' : 'text-red-400';
+    const arrow = up ? '↑' : '↓';
     return `<span class="${color} text-[10px] font-bold">${arrow} ${Math.abs(diff).toFixed(1)}pp</span>`;
   }
 
@@ -494,20 +496,24 @@ function renderManagementKPIs(data) {
     </svg>`;
   }
 
-  // Semicircle gauge for win rate
-  function winGauge(rate) {
+  // Semicircle gauge for win/loss rate (invert=true → thresholds flip so low=green, high=red)
+  function rateGauge(rate, invert = false) {
     const r = 22, W = 54, H = 30;
     const cx = W / 2, cy = H;
     const x1 = cx - r, x2 = cx + r;
     const arcLen = Math.PI * r;
     const dash = Math.min(rate / 100, 1) * arcLen;
-    const color = rate >= 60 ? '#73be4b' : rate >= 35 ? '#f59e0b' : '#f87171';
+    const color = invert
+      ? (rate <= 40 ? '#73be4b' : rate <= 65 ? '#f59e0b' : '#f87171')
+      : (rate >= 60 ? '#73be4b' : rate >= 35 ? '#f59e0b' : '#f87171');
     return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" class="overflow-visible flex-shrink-0">
       <path d="M ${x1},${cy} A ${r},${r} 0 0,0 ${x2},${cy}" fill="none" stroke="#E2E8F0" stroke-width="5" stroke-linecap="round"/>
       <path d="M ${x1},${cy} A ${r},${r} 0 0,0 ${x2},${cy}" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round"
         stroke-dasharray="${dash.toFixed(1)} ${(arcLen + 1).toFixed(1)}"/>
     </svg>`;
   }
+  const winGauge = rate => rateGauge(rate, false);
+  const lossGauge = rate => rateGauge(rate, true);
 
   // Status tag breakdown bar + legend dots
   const STATUS_TAG_COLORS = {
@@ -535,6 +541,9 @@ function renderManagementKPIs(data) {
   const closed = c.won_conversations + c.lost_conversations;
   const winRatePct  = closed > 0 ? ((c.won_conversations  / closed) * 100).toFixed(1) : '0.0';
   const lossRatePct = closed > 0 ? ((c.lost_conversations / closed) * 100).toFixed(1) : '0.0';
+  const cLossRate = closed > 0 ? (c.lost_conversations / closed) * 100 : 0;
+  const pClosed = (p.won_conversations || 0) + (p.lost_conversations || 0);
+  const pLossRate = pClosed > 0 ? (p.lost_conversations / pClosed) * 100 : null;
 
   container.innerHTML = `
     <!-- Total Conversations -->
@@ -613,6 +622,23 @@ function renderManagementKPIs(data) {
       </div>
       <p class="text-[9px] text-slate-400 mt-2.5">${closed.toLocaleString()} closed deals (${fmt(c.won_conversations)} won · ${fmt(c.lost_conversations)} lost)</p>
       ${p.win_rate != null ? `<p class="text-[9px] text-slate-400 mt-0.5">prev period: ${p.win_rate.toFixed(1)}%</p>` : ''}
+    </div>
+
+    <!-- Lost Rate -->
+    <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+      <div class="flex items-center justify-between mb-1">
+        <div class="flex items-center gap-1">
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Lost Rate</p>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="kpi-lost-rate" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+        </div>
+        ${winRateChangeBadge(cLossRate, pLossRate, true)}
+      </div>
+      <div class="flex items-end justify-between">
+        <p class="text-3xl font-bold text-red-400 leading-none">${cLossRate.toFixed(2)}%</p>
+        ${lossGauge(cLossRate)}
+      </div>
+      <p class="text-[9px] text-slate-400 mt-2.5">${closed.toLocaleString()} closed deals (${fmt(c.won_conversations)} won · ${fmt(c.lost_conversations)} lost)</p>
+      ${pLossRate != null ? `<p class="text-[9px] text-slate-400 mt-0.5">prev period: ${pLossRate.toFixed(1)}%</p>` : ''}
     </div>`;
 }
 
@@ -1372,6 +1398,14 @@ const CHART_INFO = {
       '<b>Won ÷ (Won + Lost) × 100</b>, computed over conversations created in the date range.',
       'Open conversations are excluded — the rate reflects only deals that reached a definitive outcome.',
       'The change badge is in <b>percentage points (pp)</b>, not a relative % change. Moving from 40% to 45% is shown as +5.0 pp.',
+    ],
+  },
+  'kpi-lost-rate': {
+    title: 'Lost Rate',
+    body: [
+      '<b>Lost ÷ (Won + Lost) × 100</b>, computed over conversations created in the date range.',
+      'Open conversations are excluded — the rate reflects only deals that reached a definitive outcome. Lost Rate and Win Rate always sum to 100%.',
+      'The change badge is in <b>percentage points (pp)</b>, and colors are <b>inverted</b>: a drop in Lost Rate is shown in green because fewer losses is a good outcome.',
     ],
   },
   'win-rate-trend': {
