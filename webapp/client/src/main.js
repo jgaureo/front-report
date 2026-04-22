@@ -44,7 +44,8 @@ function getDateRange(preset) {
     case 'today': return { start: today, end: eod(today) };
     case 'yesterday': { const y = new Date(today); y.setDate(y.getDate()-1); return { start: y, end: eod(y) }; }
     case 'this-week': { const s = new Date(today); s.setDate(s.getDate()-s.getDay()); return { start: s, end: eod(today) }; }
-    case 'last-7': { const s = new Date(today); s.setDate(s.getDate()-6); return { start: s, end: eod(today) }; }
+    case 'this-month': return { start: new Date(now.getFullYear(), now.getMonth(), 1), end: eod(today) };
+    case 'last-7':{ const s = new Date(today); s.setDate(s.getDate()-6); return { start: s, end: eod(today) }; }
     case 'last-week': { const s = new Date(today); s.setDate(s.getDate()-s.getDay()-7); const e = new Date(s); e.setDate(e.getDate()+6); return { start: s, end: eod(e) }; }
     case 'last-month': { const s = new Date(now.getFullYear(), now.getMonth()-1, 1); const e = new Date(now.getFullYear(), now.getMonth(), 0); return { start: s, end: eod(e) }; }
     case 'last-quarter': { const cq = Math.floor(now.getMonth()/3); const s = new Date(now.getFullYear(), (cq-1)*3, 1); const e = new Date(now.getFullYear(), cq*3, 0); return { start: s, end: eod(e) }; }
