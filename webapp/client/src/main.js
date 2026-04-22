@@ -743,7 +743,7 @@ function renderActiveConversations(data) {
       <title>${b.status}: ${fmt(b.count)}</title></path>`;
   }).join('');
 
-  const pieSvg = `<svg width="50%" viewBox="0 0 200 200" class="block mx-auto">
+  const pieSvg = `<svg width="100%" viewBox="0 0 200 200" class="block">
     ${slicePaths}
     <text x="100" y="94" text-anchor="middle" font-size="20" font-weight="bold" fill="#1e3063">${fmt(total)}</text>
     <text x="100" y="110" text-anchor="middle" font-size="11" fill="#9CA3AF">Total</text>
@@ -759,16 +759,20 @@ function renderActiveConversations(data) {
     </div>`).join('');
 
   container.innerHTML = `
-    ${pieSvg}
-    <div class="mt-2">${rows}</div>
-    <div class="flex items-center gap-4 mt-3 pt-2 border-t border-slate-100">
-      <div class="flex items-center gap-1.5">
-        <div class="size-2 rounded-full bg-[#5B86AD]"></div>
-        <span class="text-[10px] text-slate-400">Open: <span class="font-bold text-slate-600">${fmt(open_count)}</span></span>
-      </div>
-      <div class="flex items-center gap-1.5">
-        <div class="size-2 rounded-full bg-[#9CA3AF]"></div>
-        <span class="text-[10px] text-slate-400">Waiting: <span class="font-bold text-slate-600">${fmt(waiting_count)}</span></span>
+    <div class="flex items-center gap-3">
+      <div class="w-1/2 flex-shrink-0">${pieSvg}</div>
+      <div class="flex-1 min-w-0">
+        ${rows}
+        <div class="flex flex-col gap-1 mt-3 pt-2 border-t border-slate-100">
+          <div class="flex items-center gap-1.5">
+            <div class="size-2 rounded-full bg-[#5B86AD]"></div>
+            <span class="text-[10px] text-slate-400">Open: <span class="font-bold text-slate-600">${fmt(open_count)}</span></span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            <div class="size-2 rounded-full bg-[#9CA3AF]"></div>
+            <span class="text-[10px] text-slate-400">Waiting: <span class="font-bold text-slate-600">${fmt(waiting_count)}</span></span>
+          </div>
+        </div>
       </div>
     </div>`;
 }
