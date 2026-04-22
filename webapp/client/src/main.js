@@ -929,16 +929,7 @@ function renderWonByMonth(data) {
         dlBtn.disabled = true;
         dlBtn.innerHTML = `<span class="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>`;
         try {
-          const rows_data = await api(`/api/management-no-qrn-won?${qs()}`);
-          const csvRows = [['Conversation ID']];
-          for (const r of rows_data) csvRows.push([r.conversation_id]);
-          const csv = csvRows.map(r => r.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',')).join('\n');
-          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-          const a = document.createElement('a');
-          a.href = URL.createObjectURL(blob);
-          a.download = 'won-no-qrn-conversations.csv';
-          a.click();
-          URL.revokeObjectURL(a.href);
+          await downloadMgmtCsv('no-qrn-won', 'won-no-qrn-conversations.csv');
         } catch (err) {
           console.error('No-QRN won download error:', err);
         } finally {
@@ -1160,16 +1151,7 @@ function renderFreightBreakdown(data) {
       dlBtn.disabled = true;
       dlBtn.innerHTML = `<span class="material-symbols-outlined text-[12px] animate-spin">progress_activity</span>`;
       try {
-        const data = await api(`/api/management-no-direction?${qs()}`);
-        const rows = [['Conversation ID', 'QRN']];
-        for (const r of data) rows.push([r.conversation_id, r.qrn]);
-        const csv = rows.map(r => r.map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'no-direction-qrns.csv';
-        a.click();
-        URL.revokeObjectURL(a.href);
+        await downloadMgmtCsv('no-direction', 'no-direction-conversations.csv');
       } catch (err) {
         console.error('No-direction download error:', err);
       } finally {
@@ -1283,6 +1265,28 @@ if (document.getElementById('closeScheduleModal')) {
 }
 
 // ─── CSV Download ────────────────────────────────────
+// Shared helper: downloads conversation-level CSV with uniform columns
+async function downloadMgmtCsv(apiType, filename) {
+  const rows = await api(`/api/management-download?type=${apiType}&${qs()}`);
+  const csvRows = [['Conversation ID', 'QRN', 'Owner', 'Direction']];
+  for (const r of rows) csvRows.push([r.conversation_id, r.qrn, r.owner, r.direction]);
+  const csv = csvRows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+const MGMT_CSV_TYPES = {
+  'management-win-rate':            { apiType: 'win-rate',            filename: 'win-rate-conversations.csv' },
+  'management-freight-breakdown':   { apiType: 'freight-breakdown',   filename: 'freight-breakdown-conversations.csv' },
+  'management-won-by-month':        { apiType: 'won-by-month',        filename: 'won-conversations-by-direction.csv' },
+  'management-active-conversations':{ apiType: 'active-conversations', filename: 'active-conversations.csv' },
+  'management-conv-per-owner':      { apiType: 'conv-per-owner',      filename: 'conversations-per-owner.csv' },
+};
+
 document.querySelectorAll('.dl-btn').forEach(btn => {
   btn.addEventListener('click', async () => {
     const type = btn.dataset.type;
@@ -1290,97 +1294,9 @@ document.querySelectorAll('.dl-btn').forEach(btn => {
     if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
 
     try {
-      if (type === 'management-freight-breakdown') {
-        const data = await api(`/api/management-freight-breakdown?${qs()}`);
-        const rows = [['Direction', 'Mode', 'Total', '% of Direction', 'Won', 'Lost', 'Win %']];
-        const pct = (n, d) => d > 0 ? ((n / d) * 100).toFixed(2) : '0.00';
-        for (const dir of (data.directions || [])) {
-          for (const m of (dir.modes || [])) {
-            rows.push([
-              dir.label,
-              m.label,
-              m.total,
-              pct(m.total, dir.total),
-              m.won,
-              m.lost,
-              pct(m.won, m.won + m.lost),
-            ]);
-          }
-        }
-        const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'management-freight-breakdown.csv';
-        a.click();
-        URL.revokeObjectURL(a.href);
-        return;
-      }
-
-      if (type === 'management-win-rate') {
-        // Build CSV client-side from the win-rate endpoint
-        const data = await api(`/api/management-win-rate?${qs()}`);
-        const rows = [['Date', 'Won', 'Lost', 'Total', 'Win Rate (%)']];
-        for (const d of data) {
-          const wr = (d.won + d.lost) > 0 ? ((d.won / (d.won + d.lost)) * 100).toFixed(2) : '0.00';
-          rows.push([d.day, d.won, d.lost, d.total, wr]);
-        }
-        const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'management-win-rate.csv';
-        a.click();
-        URL.revokeObjectURL(a.href);
-        return;
-      }
-
-      if (type === 'management-won-by-month') {
-        const data = await api(`/api/management-won-by-month?${qs()}`);
-        const rows = [['Month', 'Domestic', 'Import', 'Export', 'Cross-Trade', 'Other', 'Total']];
-        for (const d of (data.months || [])) rows.push([d.month, d.domestic, d.import, d.export, d.crosstrade, d.other, d.total]);
-        if (data.no_qrn_total > 0) rows.push(['* Won conversations with no QRN (excluded from chart)', '', '', '', '', '', data.no_qrn_total]);
-        const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'won-conversations-by-direction.csv';
-        a.click();
-        URL.revokeObjectURL(a.href);
-        return;
-      }
-
-      if (type === 'management-active-conversations') {
-        const data = await api(`/api/management-active-conversations?${qs()}`);
-        const rows = [['Status', 'Count']];
-        for (const b of (data.breakdown || [])) rows.push([b.status, b.count]);
-        rows.push(['', ''], ['Open', data.open_count], ['Waiting', data.waiting_count], ['Total', data.total]);
-        const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'active-conversations.csv';
-        a.click();
-        URL.revokeObjectURL(a.href);
-        return;
-      }
-
-      if (type === 'management-conv-per-owner') {
-        const data = await api(`/api/management-conv-per-owner?${qs()}`);
-        const owners = data.owners || [];
-        const rows = [['Month', ...owners, 'Total']];
-        for (const m of (data.months || [])) {
-          const rowData = data.data[m] || {};
-          const total = owners.reduce((s, o) => s + (rowData[o] || 0), 0);
-          rows.push([m, ...owners.map(o => rowData[o] || 0), total]);
-        }
-        const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'conversations-per-owner.csv';
-        a.click();
-        URL.revokeObjectURL(a.href);
+      if (MGMT_CSV_TYPES[type]) {
+        const { apiType, filename } = MGMT_CSV_TYPES[type];
+        await downloadMgmtCsv(apiType, filename);
         return;
       }
 

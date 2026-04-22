@@ -1092,7 +1092,75 @@ app.get('/api/management-conv-per-owner', async (req, res) => {
   }
 });
 
-// ─── 13. Global Search ──────────────────────────────────
+// ─── 13. Management Universal CSV Download ───────────────
+app.get('/api/management-download', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const type = req.query.type || '';
+
+    const TYPE_FILTERS = {
+      'win-rate':               `qrn IS NOT NULL`,
+      'freight-breakdown':      `qrn IS NOT NULL`,
+      'won-by-month':           `is_won = 1 AND qrn IS NOT NULL`,
+      'no-qrn-won':             `is_won = 1 AND qrn IS NULL`,
+      'no-direction':           `qrn IS NOT NULL AND direction NOT IN ('Import','Export','Domestic','Cross-Trade')`,
+      'active-conversations':   `status IN ('assigned','unassigned')`,
+      'conv-per-owner':         `TRUE`,
+    };
+
+    const filter = TYPE_FILTERS[type];
+    if (!filter) return res.status(400).json({ error: `Unknown type: ${type}` });
+
+    const sql = `
+      WITH conv_base AS (
+        SELECT
+          c.id,
+          c.status,
+          MAX(q.quote_request_number) AS qrn,
+          COALESCE(CONCAT(tm.first_name, ' ', tm.last_name), 'Unassigned') AS owner,
+          MAX(
+            CASE LOWER(JSON_VALUE(q.quote_data, '$.direction'))
+              WHEN 'import'     THEN 'Import'
+              WHEN 'export'     THEN 'Export'
+              WHEN 'domestic'   THEN 'Domestic'
+              WHEN 'crosstrade' THEN 'Cross-Trade'
+              ELSE COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')
+            END
+          ) AS direction,
+          MAX(CASE WHEN LOWER(t.name) = 'won' THEN 1 ELSE 0 END) AS is_won
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
+        LEFT JOIN \`${FRONT}.teammate\` tm ON tm.id = c.teammate_id
+        LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        GROUP BY c.id, c.status, owner
+      )
+      SELECT
+        id AS conversation_id,
+        COALESCE(qrn, '') AS qrn,
+        owner,
+        direction
+      FROM conv_base
+      WHERE ${filter}
+      ORDER BY conversation_id
+    `;
+
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+    res.json(rows.map(r => ({
+      conversation_id: r.conversation_id,
+      qrn:             r.qrn || '',
+      owner:           r.owner,
+      direction:       r.direction,
+    })));
+  } catch (err) {
+    console.error('management-download error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 14. Global Search ──────────────────────────────────
 app.get('/api/search', async (req, res) => {
   try {
     const keyword = (req.query.q || '').trim();
