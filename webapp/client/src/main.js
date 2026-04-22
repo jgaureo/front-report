@@ -743,7 +743,7 @@ function renderActiveConversations(data) {
       <title>${b.status}: ${fmt(b.count)}</title></path>`;
   }).join('');
 
-  const pieSvg = `<svg width="100%" viewBox="0 0 200 200" class="block">
+  const pieSvg = `<svg width="50%" viewBox="0 0 200 200" class="block mx-auto">
     ${slicePaths}
     <text x="100" y="94" text-anchor="middle" font-size="20" font-weight="bold" fill="#1e3063">${fmt(total)}</text>
     <text x="100" y="110" text-anchor="middle" font-size="11" fill="#9CA3AF">Total</text>
