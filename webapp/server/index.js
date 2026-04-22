@@ -775,7 +775,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
       WITH per_conv AS (
         SELECT
           c.id,
-          LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')) AS direction,
+          LOWER(REPLACE(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), ''), '-', '')) AS direction,
           MAX(CASE WHEN LOWER(t.name) = 'won'    THEN 1 ELSE 0 END) AS is_won,
           MAX(CASE WHEN LOWER(t.name) = 'lost'   THEN 1 ELSE 0 END) AS is_lost,
           MAX(CASE WHEN LOWER(t.name) = 'quoted' THEN 1 ELSE 0 END) AS is_quoted,
@@ -888,7 +888,7 @@ app.get('/api/management-no-direction', async (req, res) => {
       INNER JOIN \`${AI}.email_quote_requests\` q
         ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
       WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
-        AND LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), ''))
+        AND LOWER(REPLACE(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), ''), '-', ''))
             NOT IN ('import','export','domestic','crosstrade')
       ORDER BY c.id
     `;
@@ -934,7 +934,7 @@ app.get('/api/management-won-by-month', async (req, res) => {
         SELECT
           FORMAT_TIMESTAMP('%Y-%m', c.created_at, '${TZ}') AS month,
           q.quote_request_number AS qrn,
-          LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')) AS direction
+          LOWER(REPLACE(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), ''), '-', '')) AS direction
         FROM \`${FRONT}.conversation\` c
         ${SALES_INBOX_FILTER}
         INNER JOIN \`${AI}.email_quote_requests\` q
@@ -1099,7 +1099,7 @@ app.get('/api/management-direction-by-month', async (req, res) => {
     const sql = `
       SELECT
         FORMAT_TIMESTAMP('%Y-%m', c.created_at, '${TZ}') AS month,
-        LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')) AS direction,
+        LOWER(REPLACE(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), ''), '-', '')) AS direction,
         COUNT(DISTINCT q.quote_request_number) AS cnt
       FROM \`${FRONT}.conversation\` c
       ${SALES_INBOX_FILTER}
@@ -1162,7 +1162,7 @@ app.get('/api/management-download', async (req, res) => {
           MAX(q.quote_request_number) AS qrn,
           COALESCE(CONCAT(tm.first_name, ' ', tm.last_name), 'Unassigned') AS owner,
           MAX(
-            CASE LOWER(JSON_VALUE(q.quote_data, '$.direction'))
+            CASE LOWER(REPLACE(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), ''), '-', ''))
               WHEN 'import'     THEN 'Import'
               WHEN 'export'     THEN 'Export'
               WHEN 'domestic'   THEN 'Domestic'

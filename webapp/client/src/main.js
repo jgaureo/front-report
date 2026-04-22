@@ -726,10 +726,14 @@ function renderActiveConversations(data) {
   };
 
   // Build donut chart slices (responsive full-width)
+  // Use sum of breakdown counts as denominator — convs can carry multiple
+  // status tags, so Σ(breakdown) ≥ total. Scaling against `total` would
+  // produce overlapping sweeps that exceed 360°.
+  const breakdownSum = breakdown.reduce((s, b) => s + b.count, 0) || 1;
   const R = 75, r = 46, cx = 100, cy = 100;
   let angle = -Math.PI / 2;
   const slicePaths = breakdown.map(b => {
-    const sweep = (b.count / total) * 2 * Math.PI;
+    const sweep = (b.count / breakdownSum) * 2 * Math.PI;
     const x1 = cx + R * Math.cos(angle);
     const y1 = cy + R * Math.sin(angle);
     angle += sweep;
