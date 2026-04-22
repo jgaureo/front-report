@@ -540,7 +540,10 @@ function renderManagementKPIs(data) {
     <!-- Total Conversations -->
     <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
       <div class="flex items-center justify-between mb-1">
-        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Conversations</p>
+        <div class="flex items-center gap-1">
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Conversations</p>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="kpi-total" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+        </div>
         ${changeBadge(c.total_conversations, p.total_conversations)}
       </div>
       <div class="flex items-end justify-between">
@@ -554,7 +557,10 @@ function renderManagementKPIs(data) {
     <!-- Won Conversations -->
     <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
       <div class="flex items-center justify-between mb-1">
-        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Won Conversations</p>
+        <div class="flex items-center gap-1">
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Won Conversations</p>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="kpi-won" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+        </div>
         ${changeBadge(c.won_conversations, p.won_conversations)}
       </div>
       <div class="flex items-end justify-between">
@@ -573,7 +579,10 @@ function renderManagementKPIs(data) {
     <!-- Lost Conversations -->
     <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
       <div class="flex items-center justify-between mb-1">
-        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Lost Conversations</p>
+        <div class="flex items-center gap-1">
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Lost Conversations</p>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="kpi-lost" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+        </div>
         ${changeBadge(c.lost_conversations, p.lost_conversations, true)}
       </div>
       <div class="flex items-end justify-between">
@@ -592,7 +601,10 @@ function renderManagementKPIs(data) {
     <!-- Win Rate -->
     <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
       <div class="flex items-center justify-between mb-1">
-        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Win Rate</p>
+        <div class="flex items-center gap-1">
+          <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Win Rate</p>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="kpi-win-rate" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+        </div>
         ${winRateChangeBadge(c.win_rate, p.win_rate)}
       </div>
       <div class="flex items-end justify-between">
@@ -1327,6 +1339,146 @@ function renderFreightBreakdown(data) {
     });
   }
 }
+
+// ─── Info Popover (chart/KPI descriptions) ───────────────
+const CHART_INFO = {
+  'kpi-total': {
+    title: 'Total Conversations',
+    body: [
+      'Count of unique conversations in the <b>Sales Team inbox</b> created within the selected date range — regardless of current status (open, won, lost, archived).',
+      'The colored bar underneath shows the distribution across active workflow status tags (Contacted, Need to Quote, Quoted, etc.). The sparkline tracks daily volume across the window.',
+      'The % badge compares this period to the previous equivalent window (e.g., last 30 days vs. the 30 days before that).',
+    ],
+  },
+  'kpi-won': {
+    title: 'Won Conversations',
+    body: [
+      'Conversations in the <b>Sales Team inbox</b>, created within the date range, that carry the <code>won</code> tag.',
+      '<b>"% of closed"</b> = Won ÷ (Won + Lost). Open/in-progress conversations are <i>excluded</i> from the denominator, so this reflects the conversion rate among deals with a final outcome only.',
+      'A conversation created inside the window but won later is still counted — the window is anchored on creation date, not close date.',
+    ],
+  },
+  'kpi-lost': {
+    title: 'Lost Conversations',
+    body: [
+      'Conversations in the <b>Sales Team inbox</b>, created within the date range, that carry the <code>lost</code> tag.',
+      '"% of closed" is the inverse of the Won percentage — Lost ÷ (Won + Lost).',
+      'The % change arrow is <b>inverted</b>: a drop in Lost is shown in green because fewer losses is a good outcome.',
+    ],
+  },
+  'kpi-win-rate': {
+    title: 'Win Rate',
+    body: [
+      '<b>Won ÷ (Won + Lost) × 100</b>, computed over conversations created in the date range.',
+      'Open conversations are excluded — the rate reflects only deals that reached a definitive outcome.',
+      'The change badge is in <b>percentage points (pp)</b>, not a relative % change. Moving from 40% to 45% is shown as +5.0 pp.',
+    ],
+  },
+  'win-rate-trend': {
+    title: 'Win Rate Trend',
+    body: [
+      'Daily breakdown of won vs. lost conversations from the <b>Sales Team inbox</b> across the selected date range.',
+      'Each dot represents conversations <b>created</b> that day (not closed that day) that later received a <code>won</code> or <code>lost</code> tag. Open conversations are not plotted.',
+      'Hover a day to see raw Won, Lost, Total and the daily win rate. Totals across the window should match the Won / Lost KPI cards exactly.',
+    ],
+  },
+  'won-by-direction': {
+    title: 'Won Conversation by Direction',
+    body: [
+      'Monthly breakdown of <b>won</b> conversations that contain a quote request (QRN), grouped by trade direction: Import, Export, Domestic, Cross-Trade, Other.',
+      'Counts <b>distinct QRNs</b> per month per direction. The orange total line is the sum across all directions and should match the KPI Won Conversations card over the same window.',
+      '<b>Other</b> captures QRNs whose <code>quote_data.direction</code> is missing, null, or a non-standard value. The footnote below the chart exposes these so they can be audited.',
+    ],
+  },
+  'freight-breakdown': {
+    title: 'Freight Breakdown',
+    body: [
+      'Matrix of all conversations in the window, grouped by <b>freight mode</b> (Ocean, Air, Road) and <b>trade direction</b>. Each cell counts distinct conversation × direction × mode tuples.',
+      'Includes <b>all</b> conversations (won, lost, open) with a QRN — not just won. A single conversation with multiple QRNs across different modes will appear in multiple cells.',
+      'Totals here may differ slightly from the Direction by Month chart when a conversation carries QRNs of multiple modes — that\'s expected, since this table counts mode-tuples while Direction by Month counts unique QRNs.',
+    ],
+  },
+  'requests-by-direction': {
+    title: 'Number of Requests by Direction (MoM)',
+    body: [
+      'Monthly volume of <b>all</b> quote requests from the Sales inbox, grouped by direction — regardless of outcome (won, lost, pending, open).',
+      'Useful for tracking raw demand and trade-lane mix <i>independently</i> of sales performance. Compare against Won by Direction to see where win rate is strongest vs. weakest.',
+      'Counts distinct QRNs per month. The orange total line equals the sum of all direction bars.',
+    ],
+  },
+  'active-conversations': {
+    title: 'Active Conversations',
+    body: [
+      'Donut chart of conversations currently <b>open</b> in the Sales Team inbox (not archived), broken down by their workflow status tag.',
+      'Buckets: <b>New</b> (open, no workflow tag yet — untouched), <b>Contacted</b>, <b>Need to Quote</b>, <b>Quoted</b>, <b>Need to Requote</b>, <b>Need to Onboard</b>, <b>Pending Review</b>.',
+      'This is a <b>live</b> snapshot — it ignores the date-range filter and reflects state right now. Useful for surfacing workflow bottlenecks (e.g., a large "Need to Quote" bucket signals queue buildup).',
+    ],
+  },
+  'conv-per-owner': {
+    title: 'Number of Conversations Per Owner',
+    body: [
+      'Stacked bar chart showing conversations assigned to each Sales team member within the date range, split by current status.',
+      'Includes all conversations (won, lost, in-progress) where an <b>owner is set</b>. Unassigned conversations are excluded from this view.',
+      'Useful for workload balancing: tall bars indicate heavy queues, and the status stack reveals whether each rep is blocked on quoting, follow-up, or onboarding.',
+    ],
+  },
+};
+
+(function initInfoPopover() {
+  const pop = document.getElementById('infoPopover');
+  if (!pop) return;
+  const titleEl = document.getElementById('infoPopoverTitle');
+  const bodyEl = document.getElementById('infoPopoverBody');
+  const closeBtn = document.getElementById('infoPopoverClose');
+  let currentAnchor = null;
+
+  function position(anchor) {
+    const rect = anchor.getBoundingClientRect();
+    pop.style.visibility = 'hidden';
+    pop.classList.remove('hidden');
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
+    const margin = 8;
+    let left = rect.left;
+    let top = rect.bottom + 6;
+    if (left + pw > window.innerWidth - margin) left = window.innerWidth - pw - margin;
+    if (left < margin) left = margin;
+    if (top + ph > window.innerHeight - margin) top = rect.top - ph - 6;
+    if (top < margin) top = margin;
+    pop.style.left = `${left}px`;
+    pop.style.top = `${top}px`;
+    pop.style.visibility = '';
+  }
+
+  function open(anchor, key) {
+    const info = CHART_INFO[key];
+    if (!info) return;
+    titleEl.textContent = info.title;
+    bodyEl.innerHTML = info.body.map(p => `<p>${p}</p>`).join('');
+    currentAnchor = anchor;
+    position(anchor);
+  }
+
+  function close() {
+    pop.classList.add('hidden');
+    currentAnchor = null;
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('.info-btn');
+    if (btn) {
+      e.stopPropagation();
+      const key = btn.dataset.infoKey;
+      if (currentAnchor === btn) { close(); return; }
+      open(btn, key);
+      return;
+    }
+    if (currentAnchor && !pop.contains(e.target)) close();
+  });
+  closeBtn.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  window.addEventListener('resize', () => { if (currentAnchor) position(currentAnchor); });
+  window.addEventListener('scroll', () => { if (currentAnchor) position(currentAnchor); }, true);
+})();
 
 // ─── Shift Schedule Logic ─────────────────────────────────
 const scheduleModal = document.getElementById('scheduleModal');
