@@ -132,6 +132,7 @@ function navigateTo(page) {
   if (page === 'pricing-dashboard' && lastTrendData) renderTrend(lastTrendData);
   if (page === 'management-dashboard' && lastWinRateData) renderWinRateChart(lastWinRateData);
   if (page === 'management-dashboard' && lastWonByMonthData) renderWonByMonth(lastWonByMonthData);
+  if (page === 'management-dashboard' && lastDirByMonthData) renderDirectionByMonth(lastDirByMonthData);
   if (page === 'management-dashboard' && lastConvPerOwnerData) renderConvPerOwner(lastConvPerOwnerData);
 }
 
@@ -1062,6 +1063,162 @@ function renderWonByMonth(data) {
   });
 }
 
+// ─── Render: Direction by Month ──────────────────────────
+let lastDirByMonthData = null;
+
+function renderDirectionByMonth(data) {
+  lastDirByMonthData = data;
+  const svg = document.getElementById('dirByMonthChart');
+  const tooltip = document.getElementById('dirByMonthTooltip');
+  const tableEl = document.getElementById('dirByMonthTable');
+  if (!svg) return;
+  svg.innerHTML = '';
+  if (tableEl) tableEl.innerHTML = '';
+
+  const months = data?.months || [];
+  if (!months.length) {
+    svg.innerHTML = '<text x="50%" y="50%" text-anchor="middle" fill="#9CA3AF" font-size="12">No data</text>';
+    return;
+  }
+
+  const COLORS = { domestic: '#1e3063', import: '#5B86AD', export: '#73be4b', crosstrade: '#f87171', other: '#9CA3AF' };
+  const STACK_KEYS = ['other', 'crosstrade', 'export', 'import', 'domestic'];
+  const DIR_LABELS = { domestic: 'Domestic', import: 'Import', export: 'Export', crosstrade: 'Cross-Trade', other: 'Other' };
+
+  const W = svg.getBoundingClientRect().width || 600;
+  const H = 240;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const pad = { t: 24, r: 16, b: 36, l: 40 };
+  const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
+
+  const maxV = Math.max(...months.map(d => d.total), 1);
+  const slotW = cw / months.length;
+  const barW = Math.max(6, Math.min(40, slotW * 0.55));
+  const xCenter = i => pad.l + i * slotW + slotW / 2;
+  const yPos = v => pad.t + ch - (v / maxV) * ch;
+  const ns = 'http://www.w3.org/2000/svg';
+
+  // Grid lines + Y labels
+  for (let i = 0; i <= 4; i++) {
+    const yy = pad.t + (ch / 4) * i;
+    const gl = document.createElementNS(ns, 'line');
+    Object.entries({ x1: pad.l, x2: W - pad.r, y1: yy, y2: yy, stroke: '#F3F4F6', 'stroke-width': 1 }).forEach(([k, v]) => gl.setAttribute(k, v));
+    svg.appendChild(gl);
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', pad.l - 6); lbl.setAttribute('y', yy + 3);
+    lbl.setAttribute('text-anchor', 'end'); lbl.setAttribute('fill', '#9CA3AF'); lbl.setAttribute('font-size', '9');
+    lbl.textContent = Math.round(maxV - (maxV / 4) * i);
+    svg.appendChild(lbl);
+  }
+
+  // Stacked bars
+  months.forEach((d, i) => {
+    let stackBase = pad.t + ch;
+    for (const key of STACK_KEYS) {
+      const v = d[key] || 0;
+      if (v === 0) continue;
+      const bH = (v / maxV) * ch;
+      stackBase -= bH;
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', xCenter(i) - barW / 2); rect.setAttribute('y', stackBase);
+      rect.setAttribute('width', barW); rect.setAttribute('height', bH);
+      rect.setAttribute('fill', COLORS[key]);
+      svg.appendChild(rect);
+    }
+    if (d.total > 0) {
+      const lbl = document.createElementNS(ns, 'text');
+      lbl.setAttribute('x', xCenter(i)); lbl.setAttribute('y', yPos(d.total) - 4);
+      lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('fill', '#475569');
+      lbl.setAttribute('font-size', '8'); lbl.setAttribute('font-weight', 'bold');
+      lbl.textContent = d.total;
+      svg.appendChild(lbl);
+    }
+  });
+
+  // Total line overlay
+  if (months.length > 1) {
+    const lineD = months.map((d, i) => `${i === 0 ? 'M' : 'L'} ${xCenter(i)} ${yPos(d.total)}`).join(' ');
+    const linePath = document.createElementNS(ns, 'path');
+    linePath.setAttribute('d', lineD); linePath.setAttribute('fill', 'none');
+    linePath.setAttribute('stroke', '#f59e0b'); linePath.setAttribute('stroke-width', '2');
+    linePath.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(linePath);
+    months.forEach((d, i) => {
+      const dot = document.createElementNS(ns, 'circle');
+      dot.setAttribute('cx', xCenter(i)); dot.setAttribute('cy', yPos(d.total));
+      dot.setAttribute('r', '3'); dot.setAttribute('fill', '#f59e0b');
+      dot.setAttribute('stroke', '#fff'); dot.setAttribute('stroke-width', '1.5');
+      svg.appendChild(dot);
+    });
+  }
+
+  // X-axis labels + tooltips
+  const showYear = new Set(months.map(d => d.month.slice(0, 4))).size > 1 || months.length <= 6;
+  months.forEach((d, i) => {
+    const [yr, mo] = d.month.split('-');
+    const label = new Date(+yr, +mo - 1, 1).toLocaleString('en-US', { month: 'short' }) + (showYear ? ` '${yr.slice(2)}` : '');
+    const lbl = document.createElementNS(ns, 'text');
+    lbl.setAttribute('x', xCenter(i)); lbl.setAttribute('y', H - 6);
+    lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('fill', '#9CA3AF'); lbl.setAttribute('font-size', '8');
+    lbl.textContent = label;
+    svg.appendChild(lbl);
+
+    const hit = document.createElementNS(ns, 'rect');
+    hit.setAttribute('x', xCenter(i) - slotW / 2); hit.setAttribute('y', pad.t);
+    hit.setAttribute('width', slotW); hit.setAttribute('height', ch); hit.setAttribute('fill', 'transparent');
+    hit.addEventListener('mouseenter', () => {
+      tooltip.classList.remove('hidden');
+      tooltip.innerHTML = `<strong>${label}</strong><br>Total: ${d.total}<br>` +
+        `Import: ${d.import} &nbsp; Export: ${d.export}<br>` +
+        `Domestic: ${d.domestic} &nbsp; Cross-Trade: ${d.crosstrade}` +
+        (d.other > 0 ? `<br>Other: ${d.other}` : '');
+    });
+    hit.addEventListener('mousemove', e => {
+      const cr = svg.closest('.relative').getBoundingClientRect();
+      tooltip.style.left = (e.clientX - cr.left + 12) + 'px';
+      tooltip.style.top  = (e.clientY - cr.top  - 40) + 'px';
+    });
+    hit.addEventListener('mouseleave', () => tooltip.classList.add('hidden'));
+    svg.appendChild(hit);
+  });
+
+  // Data table
+  if (tableEl && months.length) {
+    const mLabels = months.map(d => {
+      const [yr, mo] = d.month.split('-');
+      return new Date(+yr, +mo - 1, 1).toLocaleString('en-US', { month: 'short' }) + (showYear ? ` '${yr.slice(2)}` : '');
+    });
+    const dirTotals = Object.fromEntries(STACK_KEYS.map(k => [k, months.reduce((s, d) => s + (d[k] || 0), 0)]));
+    const grandTotal = months.reduce((s, d) => s + d.total, 0);
+
+    const thStyle = 'py-1 px-2 text-[10px] font-bold text-slate-500 uppercase tracking-wide text-right first:text-left';
+    const tdStyle = 'py-1 px-2 text-[10px] text-right text-slate-600 first:text-left';
+    const headerCells = ['Direction', ...mLabels, 'Total'].map((h, i) => `<th class="${thStyle}">${h}</th>`).join('');
+    const dataRows = [...STACK_KEYS].reverse().map(key => {
+      const cells = months.map(d => `<td class="${tdStyle}">${(d[key] || 0).toLocaleString()}</td>`).join('');
+      const rowTotal = `<td class="${tdStyle} font-bold">${dirTotals[key].toLocaleString()}</td>`;
+      return `<tr class="border-b border-slate-50 last:border-0">
+        <td class="${tdStyle} flex items-center gap-1.5">
+          <span class="inline-block size-2 rounded-sm flex-shrink-0" style="background:${COLORS[key]}"></span>${DIR_LABELS[key]}
+        </td>${cells}${rowTotal}</tr>`;
+    }).join('');
+    const totalCells = months.map(d => `<td class="${tdStyle} font-bold text-primary">${d.total.toLocaleString()}</td>`).join('');
+
+    tableEl.innerHTML = `<div class="overflow-x-auto">
+      <table class="w-full border-collapse">
+        <thead><tr class="bg-slate-50 dark:bg-slate-700/40">${headerCells}</tr></thead>
+        <tbody>
+          ${dataRows}
+          <tr class="bg-slate-50 dark:bg-slate-700/20">
+            <td class="${tdStyle} font-bold text-primary">Total</td>${totalCells}
+            <td class="${tdStyle} font-bold text-primary">${grandTotal.toLocaleString()}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`;
+  }
+}
+
 // ─── Render: Freight Breakdown ───────────────────────────
 function renderFreightBreakdown(data) {
   const container = document.getElementById('freightBreakdown');
@@ -1287,6 +1444,7 @@ const MGMT_CSV_TYPES = {
   'management-win-rate':            { apiType: 'win-rate',            filename: 'win-rate-conversations.csv' },
   'management-freight-breakdown':   { apiType: 'freight-breakdown',   filename: 'freight-breakdown-conversations.csv' },
   'management-won-by-month':        { apiType: 'won-by-month',        filename: 'won-conversations-by-direction.csv' },
+  'management-direction-by-month':  { apiType: 'direction-by-month',  filename: 'direction-by-month-conversations.csv' },
   'management-active-conversations':{ apiType: 'active-conversations', filename: 'active-conversations.csv' },
   'management-conv-per-owner':      { apiType: 'conv-per-owner',      filename: 'conversations-per-owner.csv' },
 };
@@ -1366,7 +1524,7 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth, activeConv, convPerOwner] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth, dirByMonth, activeConv, convPerOwner] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
@@ -1377,6 +1535,7 @@ async function loadAll() {
       api(`/api/management-win-rate?${q}`),
       api(`/api/management-freight-breakdown?${q}`).catch(() => null),
       api(`/api/management-won-by-month?${q}`).catch(() => null),
+      api(`/api/management-direction-by-month?${q}`).catch(() => null),
       api(`/api/management-active-conversations?${q}`).catch(() => null),
       api(`/api/management-conv-per-owner?${q}`).catch(() => null),
     ]);
@@ -1394,6 +1553,7 @@ async function loadAll() {
     renderWinRateChart(winRate);
     renderWonByMonth(wonByMonth);
     renderFreightBreakdown(freightBreakdown);
+    renderDirectionByMonth(dirByMonth);
     renderActiveConversations(activeConv);
     renderConvPerOwner(convPerOwner);
   } catch (err) {

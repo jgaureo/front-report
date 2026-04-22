@@ -331,6 +331,31 @@
       </div>
     </section>
 
+    <!-- Direction by Month -->
+    <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <h2 class="text-sm font-bold text-primary">Number of Requests by Direction (MoM)</h2>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="management-direction-by-month">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center gap-4 mb-3 flex-wrap">
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#f59e0b"></div><span class="text-[10px] font-semibold text-slate-500">Total (line)</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#1e3063"></div><span class="text-[10px] font-semibold text-slate-500">Domestic</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#5B86AD"></div><span class="text-[10px] font-semibold text-slate-500">Import</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#73be4b"></div><span class="text-[10px] font-semibold text-slate-500">Export</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#f87171"></div><span class="text-[10px] font-semibold text-slate-500">Cross-Trade</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#9CA3AF"></div><span class="text-[10px] font-semibold text-slate-500">Other</span></div>
+        </div>
+        <div class="relative">
+          <svg id="dirByMonthChart" class="w-full" style="height:240px" preserveAspectRatio="none"></svg>
+          <div id="dirByMonthTooltip" class="hidden absolute pointer-events-none z-10 bg-slate-800/95 text-white text-[11px] rounded-lg px-3 py-2 shadow-lg leading-relaxed"></div>
+        </div>
+        <div id="dirByMonthTable" class="mt-3"></div>
+      </div>
+    </section>
+
     <!-- Active Conversations + Conv Per Owner (side by side) -->
     <div class="grid grid-cols-3 gap-3">
 

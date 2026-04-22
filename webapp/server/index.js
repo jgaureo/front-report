@@ -1092,7 +1092,49 @@ app.get('/api/management-conv-per-owner', async (req, res) => {
   }
 });
 
-// ─── 13. Management Universal CSV Download ───────────────
+// ─── 13. Management Direction by Month ───────────────────
+app.get('/api/management-direction-by-month', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const sql = `
+      SELECT
+        FORMAT_TIMESTAMP('%Y-%m', c.created_at, '${TZ}') AS month,
+        LOWER(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')) AS direction,
+        COUNT(DISTINCT q.quote_request_number) AS cnt
+      FROM \`${FRONT}.conversation\` c
+      ${SALES_INBOX_FILTER}
+      INNER JOIN \`${AI}.email_quote_requests\` q
+        ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+      GROUP BY month, direction
+      ORDER BY month, direction
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+
+    const monthMap = {};
+    for (const r of rows) {
+      const m = r.month;
+      if (!monthMap[m]) monthMap[m] = { month: m, import: 0, export: 0, domestic: 0, crosstrade: 0, other: 0, total: 0 };
+      const cnt = Number(r.cnt);
+      const dir = r.direction;
+      if      (dir === 'import')     monthMap[m].import     += cnt;
+      else if (dir === 'export')     monthMap[m].export     += cnt;
+      else if (dir === 'domestic')   monthMap[m].domestic   += cnt;
+      else if (dir === 'crosstrade') monthMap[m].crosstrade += cnt;
+      else                           monthMap[m].other      += cnt;
+      monthMap[m].total += cnt;
+    }
+
+    res.json({
+      months: Object.values(monthMap).sort((a, b) => a.month.localeCompare(b.month)),
+    });
+  } catch (err) {
+    console.error('management-direction-by-month error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 14. Management Universal CSV Download ───────────────
 app.get('/api/management-download', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
@@ -1102,6 +1144,7 @@ app.get('/api/management-download', async (req, res) => {
       'win-rate':               `qrn IS NOT NULL`,
       'freight-breakdown':      `qrn IS NOT NULL`,
       'won-by-month':           `is_won = 1 AND qrn IS NOT NULL`,
+      'direction-by-month':     `qrn IS NOT NULL`,
       'no-qrn-won':             `is_won = 1 AND qrn IS NULL`,
       'no-direction':           `qrn IS NOT NULL AND direction NOT IN ('Import','Export','Domestic','Cross-Trade')`,
       'active-conversations':   `status IN ('assigned','unassigned')`,
