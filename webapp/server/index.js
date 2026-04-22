@@ -620,14 +620,15 @@ app.get('/api/management-kpis', async (req, res) => {
     const prevStartStr = prevStart.toISOString();
     const prevEndStr   = prevEnd.toISOString();
 
-    // Reusable: total / won / lost counts for a date window
+    // Reusable: total / won / lost / quoted counts for a date window
     const baseSql = `
       WITH base AS (
         SELECT
           c.id,
           q.quote_request_number AS qrn,
-          MAX(CASE WHEN LOWER(t.name) = 'won'  THEN 1 ELSE 0 END) AS is_won,
-          MAX(CASE WHEN LOWER(t.name) = 'lost' THEN 1 ELSE 0 END) AS is_lost
+          MAX(CASE WHEN LOWER(t.name) = 'won'    THEN 1 ELSE 0 END) AS is_won,
+          MAX(CASE WHEN LOWER(t.name) = 'lost'   THEN 1 ELSE 0 END) AS is_lost,
+          MAX(CASE WHEN LOWER(t.name) = 'quoted' THEN 1 ELSE 0 END) AS is_quoted
         FROM \`${FRONT}.conversation\` c
         ${SALES_INBOX_FILTER}
         LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
@@ -639,8 +640,9 @@ app.get('/api/management-kpis', async (req, res) => {
       )
       SELECT
         COUNT(DISTINCT qrn) AS total_conversations,
-        COUNT(DISTINCT CASE WHEN is_won  = 1 THEN qrn END) AS won_conversations,
-        COUNT(DISTINCT CASE WHEN is_lost = 1 THEN qrn END) AS lost_conversations
+        COUNT(DISTINCT CASE WHEN is_won    = 1 THEN qrn END) AS won_conversations,
+        COUNT(DISTINCT CASE WHEN is_lost   = 1 THEN qrn END) AS lost_conversations,
+        COUNT(DISTINCT CASE WHEN is_quoted = 1 THEN qrn END) AS quoted_conversations
       FROM base
     `;
 
@@ -706,11 +708,19 @@ app.get('/api/management-kpis', async (req, res) => {
 
     function buildStats(rows) {
       const r = rows[0] || {};
-      const total = Number(r.total_conversations || 0);
-      const won   = Number(r.won_conversations   || 0);
-      const lost  = Number(r.lost_conversations  || 0);
-      return { total_conversations: total, won_conversations: won, lost_conversations: lost,
-               win_rate: (won + lost) > 0 ? (won / (won + lost)) * 100 : 0 };
+      const total  = Number(r.total_conversations  || 0);
+      const won    = Number(r.won_conversations    || 0);
+      const lost   = Number(r.lost_conversations   || 0);
+      const quoted = Number(r.quoted_conversations || 0);
+      return {
+        total_conversations:  total,
+        won_conversations:    won,
+        lost_conversations:   lost,
+        quoted_conversations: quoted,
+        // Win/Lost rate use Quoted as denominator (matches Freight Breakdown's per-row %).
+        win_rate:  quoted > 0 ? (won  / quoted) * 100 : 0,
+        lost_rate: quoted > 0 ? (lost / quoted) * 100 : 0,
+      };
     }
 
     res.json({

@@ -539,11 +539,9 @@ function renderManagementKPIs(data) {
     </div>` : '';
 
   const closed = c.won_conversations + c.lost_conversations;
+  const quoted = c.quoted_conversations || 0;
   const winRatePct  = closed > 0 ? ((c.won_conversations  / closed) * 100).toFixed(1) : '0.0';
   const lossRatePct = closed > 0 ? ((c.lost_conversations / closed) * 100).toFixed(1) : '0.0';
-  const cLossRate = closed > 0 ? (c.lost_conversations / closed) * 100 : 0;
-  const pClosed = (p.won_conversations || 0) + (p.lost_conversations || 0);
-  const pLossRate = pClosed > 0 ? (p.lost_conversations / pClosed) * 100 : null;
 
   container.innerHTML = `
     <!-- Total Conversations -->
@@ -620,7 +618,7 @@ function renderManagementKPIs(data) {
         <p class="text-3xl font-bold text-primary leading-none">${c.win_rate.toFixed(2)}%</p>
         ${winGauge(c.win_rate)}
       </div>
-      <p class="text-[9px] text-slate-400 mt-2.5">${closed.toLocaleString()} closed deals (${fmt(c.won_conversations)} won · ${fmt(c.lost_conversations)} lost)</p>
+      <p class="text-[9px] text-slate-400 mt-2.5">${fmt(c.won_conversations)} won ÷ ${fmt(quoted)} quoted</p>
       ${p.win_rate != null ? `<p class="text-[9px] text-slate-400 mt-0.5">prev period: ${p.win_rate.toFixed(1)}%</p>` : ''}
     </div>
 
@@ -631,14 +629,14 @@ function renderManagementKPIs(data) {
           <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Lost Rate</p>
           <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="kpi-lost-rate" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
         </div>
-        ${winRateChangeBadge(cLossRate, pLossRate, true)}
+        ${winRateChangeBadge(c.lost_rate, p.lost_rate, true)}
       </div>
       <div class="flex items-end justify-between">
-        <p class="text-3xl font-bold text-red-400 leading-none">${cLossRate.toFixed(2)}%</p>
-        ${lossGauge(cLossRate)}
+        <p class="text-3xl font-bold text-red-400 leading-none">${c.lost_rate.toFixed(2)}%</p>
+        ${lossGauge(c.lost_rate)}
       </div>
-      <p class="text-[9px] text-slate-400 mt-2.5">${closed.toLocaleString()} closed deals (${fmt(c.won_conversations)} won · ${fmt(c.lost_conversations)} lost)</p>
-      ${pLossRate != null ? `<p class="text-[9px] text-slate-400 mt-0.5">prev period: ${pLossRate.toFixed(1)}%</p>` : ''}
+      <p class="text-[9px] text-slate-400 mt-2.5">${fmt(c.lost_conversations)} lost ÷ ${fmt(quoted)} quoted</p>
+      ${p.lost_rate != null ? `<p class="text-[9px] text-slate-400 mt-0.5">prev period: ${p.lost_rate.toFixed(1)}%</p>` : ''}
     </div>`;
 }
 
@@ -1395,16 +1393,16 @@ const CHART_INFO = {
   'kpi-win-rate': {
     title: 'Win Rate',
     body: [
-      '<b>Won ÷ (Won + Lost) × 100</b>, computed over conversations created in the date range.',
-      'Open conversations are excluded — the rate reflects only deals that reached a definitive outcome.',
+      '<b>Won ÷ Quoted × 100</b>, computed over QRNs whose conversation was created in the date range. Same denominator as Freight Breakdown\'s per-row win %.',
+      '<b>Quoted</b> = QRNs tagged <code>quoted</code>. A QRN tagged <code>won</code> but never <code>quoted</code> still counts in the numerator, so the rate can occasionally exceed 100%.',
       'The change badge is in <b>percentage points (pp)</b>, not a relative % change. Moving from 40% to 45% is shown as +5.0 pp.',
     ],
   },
   'kpi-lost-rate': {
     title: 'Lost Rate',
     body: [
-      '<b>Lost ÷ (Won + Lost) × 100</b>, computed over conversations created in the date range.',
-      'Open conversations are excluded — the rate reflects only deals that reached a definitive outcome. Lost Rate and Win Rate always sum to 100%.',
+      '<b>Lost ÷ Quoted × 100</b>, mirroring Freight Breakdown\'s denominator.',
+      'Win Rate and Lost Rate <i>do not</i> sum to 100% — Quoted can include QRNs that are still open, requoting, or otherwise not yet won/lost.',
       'The change badge is in <b>percentage points (pp)</b>, and colors are <b>inverted</b>: a drop in Lost Rate is shown in green because fewer losses is a good outcome.',
     ],
   },
