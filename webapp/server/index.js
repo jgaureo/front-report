@@ -1437,10 +1437,15 @@ async function fetchPriorQrnCounts(qrnList) {
   if (!qrnList.length) return new Map();
   const sql = `
     WITH input_qrns AS (SELECT UNNEST($1::text[]) AS qrn),
-    quote_with_company AS (
-      SELECT
+    qrn_first_seen AS (
+      SELECT q.qrn, MIN(q.created_at) AS first_seen
+      FROM quotes_quote q
+      WHERE q.qrn IS NOT NULL
+      GROUP BY q.qrn
+    ),
+    qrn_latest_company AS (
+      SELECT DISTINCT ON (q.qrn)
         q.qrn,
-        q.created_at,
         COALESCE(
           NULLIF(q.bill_to_org_id::text, ''),
           LOWER(TRIM(q.bill_to_org_name)),
@@ -1448,22 +1453,20 @@ async function fetchPriorQrnCounts(qrnList) {
         ) AS company_key
       FROM quotes_quote q
       WHERE q.qrn IS NOT NULL
+      ORDER BY q.qrn, q.created_at DESC
     ),
-    qrn_first_seen AS (
-      SELECT
-        qrn,
-        MIN(created_at) AS first_seen,
-        (ARRAY_AGG(company_key ORDER BY created_at NULLS LAST))[1] AS company_key
-      FROM quote_with_company
-      WHERE company_key IS NOT NULL AND company_key <> ''
-      GROUP BY qrn
+    qrn_keys AS (
+      SELECT fs.qrn, fs.first_seen, lc.company_key
+      FROM qrn_first_seen fs
+      JOIN qrn_latest_company lc ON lc.qrn = fs.qrn
+      WHERE lc.company_key IS NOT NULL AND lc.company_key <> ''
     ),
     qrn_with_priors AS (
       SELECT
         qrn,
         ROW_NUMBER() OVER (PARTITION BY company_key ORDER BY first_seen, qrn) - 1
           AS prior_qrn_count
-      FROM qrn_first_seen
+      FROM qrn_keys
     )
     SELECT iq.qrn, COALESCE(qwp.prior_qrn_count, 0) AS prior_qrn_count
     FROM input_qrns iq

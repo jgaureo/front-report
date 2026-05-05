@@ -1707,7 +1707,7 @@ const CHART_INFO = {
     title: 'Quote Stages by New vs Returning Business',
     body: [
       '<b>All-time</b> view (ignores the date filter). Each row is a business type bucket — <b>New Business</b> or <b>Returning Business</b>.',
-      'A deal is <b>New Business</b> if the company had <b>zero prior quotes</b> at the time this QRN was first quoted; <b>Returning Business</b> if the company had ≥1 earlier QRN. Companies are matched on <code>bill_to_org_id</code> when present, falling back to a normalized <code>bill_to_org_name</code> or <code>manual_company_name</code>.',
+      'A deal is <b>New Business</b> if the company had <b>zero prior QRNs</b> ranked before this one; <b>Returning Business</b> if ≥1 earlier QRN. Each QRN\'s company key is taken from its <b>latest</b> quote (matching the customer name shown), preferring <code>bill_to_org_id</code> and falling back to a normalized <code>bill_to_org_name</code> or <code>manual_company_name</code>. Ranking within a company is by the QRN\'s earliest quote date.',
       'Stage columns, conversion %, and Win/Loss % use the same definitions as the Quote Stages by Rep widget.',
     ],
   },
