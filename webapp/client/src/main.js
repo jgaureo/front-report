@@ -1202,6 +1202,84 @@ function renderQuotedPotentialRevenue(data) {
   renderDealList('quotedPotentialRevenue', data, 'No deals in Quoted stage');
 }
 
+// Shared renderer for the two stage tables. `firstColLabel` and `firstColKey`
+// pick whether each row keys off `name` (rep) or `type` (business type).
+function renderStageTable(elId, data, firstColLabel, firstColKey, emptyMsg) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const rows = data?.reps || data?.rows || [];
+  const pipeline = data?.pipeline || ['Contacted', 'Need To Quote', 'Need To Re-Quote', 'Quoted', 'Need To Onboard', 'Won'];
+  const side = data?.side || ['Lost', 'Unable To Quote'];
+  if (!rows.length) {
+    el.innerHTML = `<div class="text-xs text-slate-400 text-center py-4">${emptyMsg}</div>`;
+    return;
+  }
+  // Header: first col + (stage, conv%, stage, conv%, ..., final stage) + side stages + Total + Win% + Loss%
+  const stageHeaders = pipeline.map((stage, i) => {
+    const stageTh = `<th class="text-right font-semibold py-2 px-2 whitespace-nowrap">${escHtml(stage)}</th>`;
+    const arrowTh = i < pipeline.length - 1
+      ? `<th class="text-center font-semibold py-2 px-1 text-slate-300">→</th>`
+      : '';
+    return stageTh + arrowTh;
+  }).join('');
+  const sideHeaders = side.map(s => `<th class="text-right font-semibold py-2 px-2 whitespace-nowrap text-slate-400">${escHtml(s)}</th>`).join('');
+
+  const bodyRows = rows.map(r => {
+    const counts = r.counts || {};
+    const conv = r.conversions || [];
+    const stageCells = pipeline.map((stage, i) => {
+      const cnt = counts[stage] || 0;
+      const cellClass = stage === 'Won' ? 'font-bold text-success' : 'text-slate-700';
+      const stageTd = `<td class="py-2 px-2 text-right ${cellClass}">${cnt}</td>`;
+      let arrowTd = '';
+      if (i < pipeline.length - 1) {
+        const c = conv[i];
+        const pct = c ? c.pct : 0;
+        const tone = pct >= 50 ? 'text-success' : pct >= 20 ? 'text-amber-500' : 'text-slate-400';
+        arrowTd = `<td class="py-2 px-1 text-center text-[10px] font-semibold ${tone}">${pct.toFixed(0)}%</td>`;
+      }
+      return stageTd + arrowTd;
+    }).join('');
+    const sideCells = side.map(s => `<td class="py-2 px-2 text-right text-slate-400">${counts[s] || 0}</td>`).join('');
+    return `<tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/40">
+      <td class="py-2 pr-3 font-semibold text-slate-700 whitespace-nowrap">${escHtml(r[firstColKey] || '—')}</td>
+      ${stageCells}
+      ${sideCells}
+      <td class="py-2 px-2 text-right font-bold text-slate-700">${r.total || 0}</td>
+      <td class="py-2 px-2 text-right font-bold text-success">${(r.win_pct || 0).toFixed(1)}%</td>
+      <td class="py-2 px-2 text-right font-bold text-rose-500">${(r.loss_pct || 0).toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="overflow-x-auto">
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+            <th class="text-left font-semibold py-2 pr-3 whitespace-nowrap">${escHtml(firstColLabel)}</th>
+            ${stageHeaders}
+            ${sideHeaders}
+            <th class="text-right font-semibold py-2 px-2">Total</th>
+            <th class="text-right font-semibold py-2 px-2">Win %</th>
+            <th class="text-right font-semibold py-2 px-2">Loss %</th>
+          </tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </div>
+    <div class="mt-2 text-[10px] text-slate-400">
+      Conversion % between stages = deals reaching the next stage ÷ deals reaching the current stage (using the precedence-based bucket each deal currently sits in).
+    </div>`;
+}
+
+function renderQuoteStagesByRep(data) {
+  renderStageTable('quoteStagesByRep', data, 'Rep', 'name', 'No reps with quotes');
+}
+
+function renderQuoteStagesByBusinessType(data) {
+  renderStageTable('quoteStagesByBusinessType', data, 'Business Type', 'type', 'No deals classified');
+}
+
 // ─── Render: Direction by Month ──────────────────────────
 let lastDirByMonthData = null;
 
@@ -1576,6 +1654,24 @@ const CHART_INFO = {
       'The total at the top is the upper bound on revenue still in play from quotes already delivered.',
     ],
   },
+  'quote-stages-by-rep': {
+    title: 'Quote Stages by Rep',
+    body: [
+      '<b>All-time</b> view (ignores the date filter). Each row is a sales rep, each column is a stage in the quote pipeline.',
+      'Pipeline order: <b>Contacted → Need to Quote → Need to Re-Quote → Quoted → Need to Onboard → Won</b>. <b>Lost</b> and <b>Unable to Quote</b> are terminal off-pipeline outcomes shown alongside.',
+      'Each deal is bucketed into a single stage by precedence (Won > Lost > Need to Onboard > Quoted > Need to Quote > Need to Re-Quote > Contacted > Unable to Quote), so Won counts include deals that passed through Quoted earlier.',
+      'The arrow column between two stages shows <code>(deals at the later stage or beyond) ÷ (deals at the earlier stage or beyond)</code> — i.e. survivorship from one stage to the next, not the raw transition rate.',
+      '<b>Win %</b> = Won ÷ rep total; <b>Loss %</b> = Lost ÷ rep total. Total counts every bucket including Lost and Unable to Quote. Reps with no resolvable owner are excluded.',
+    ],
+  },
+  'quote-stages-by-business-type': {
+    title: 'Quote Stages by New vs Returning Business',
+    body: [
+      '<b>All-time</b> view (ignores the date filter). Each row is a business type bucket — <b>New Business</b> or <b>Returning Business</b>.',
+      'A deal is <b>New Business</b> if the company had <b>zero prior quotes</b> at the time this QRN was first quoted; <b>Returning Business</b> if the company had ≥1 earlier QRN. Companies are matched on <code>bill_to_org_id</code> when present, falling back to a normalized <code>bill_to_org_name</code> or <code>manual_company_name</code>.',
+      'Stage columns, conversion %, and Win/Loss % use the same definitions as the Quote Stages by Rep widget.',
+    ],
+  },
 };
 
 (function initInfoPopover() {
@@ -1835,7 +1931,7 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth, dirByMonth, activeConv, convPerOwner, revByCompany, needOnboard, quotedPotential] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth, dirByMonth, activeConv, convPerOwner, revByCompany, needOnboard, quotedPotential, stagesByRep, stagesByBizType] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
@@ -1852,6 +1948,8 @@ async function loadAll() {
       api(`/api/revenue-by-company?${q}`).catch(() => null),
       api(`/api/need-to-onboard-revenue?${q}`).catch(() => null),
       api(`/api/quoted-potential-revenue?${q}`).catch(() => null),
+      api(`/api/quote-stages-by-rep`).catch(() => null),
+      api(`/api/quote-stages-by-business-type`).catch(() => null),
     ]);
 
     teamSchedules = schedules || {};
@@ -1873,6 +1971,8 @@ async function loadAll() {
     renderRevenueByCompany(revByCompany);
     renderNeedToOnboardRevenue(needOnboard);
     renderQuotedPotentialRevenue(quotedPotential);
+    renderQuoteStagesByRep(stagesByRep);
+    renderQuoteStagesByBusinessType(stagesByBizType);
   } catch (err) {
     console.error('Load error:', err);
   } finally {

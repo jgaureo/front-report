@@ -1400,8 +1400,13 @@ const STAGE_CASE_SQL = `
   END
 `;
 
-// Resolves QRN → stage from BigQuery for the date window. Returns Map<qrn, stage>.
+// Resolves QRN → stage from BigQuery. Pass null for both dates to get all-time.
+// Returns Map<qrn, stage>.
 async function fetchQrnStages(startStr, endStr) {
+  const allTime = !startStr && !endStr;
+  const whereClause = allTime
+    ? ''
+    : 'WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)';
   const sql = `
     WITH qrn_tags AS (
       SELECT
@@ -1413,14 +1418,97 @@ async function fetchQrnStages(startStr, endStr) {
         ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
       LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
       LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+      ${whereClause}
     )
     SELECT qrn, ${STAGE_CASE_SQL} AS stage
     FROM qrn_tags
     GROUP BY qrn
   `;
-  const rows = await runQuery(sql, { start: startStr, end: endStr });
+  const params = allTime ? {} : { start: startStr, end: endStr };
+  const rows = await runQuery(sql, params);
   return new Map(rows.map(r => [r.qrn, r.stage]));
+}
+
+// Returns Map<qrn, prior_qrn_count> — number of OTHER QRNs against the same
+// company (same bill_to_org_id, or normalized bill_to_org_name / manual_company_name)
+// with an earlier first-seen timestamp than this QRN. 0 ⇒ company's first-ever
+// quote ⇒ "New Business"; ≥1 ⇒ "Returning Business".
+async function fetchPriorQrnCounts(qrnList) {
+  if (!qrnList.length) return new Map();
+  const sql = `
+    WITH input_qrns AS (SELECT UNNEST($1::text[]) AS qrn),
+    quote_with_company AS (
+      SELECT
+        q.qrn,
+        q.created_at,
+        COALESCE(
+          NULLIF(q.bill_to_org_id::text, ''),
+          LOWER(TRIM(q.bill_to_org_name)),
+          LOWER(TRIM(q.manual_company_name))
+        ) AS company_key
+      FROM quotes_quote q
+      WHERE q.qrn IS NOT NULL
+    ),
+    qrn_first_seen AS (
+      SELECT
+        qrn,
+        MIN(created_at) AS first_seen,
+        (ARRAY_AGG(company_key ORDER BY created_at NULLS LAST))[1] AS company_key
+      FROM quote_with_company
+      WHERE company_key IS NOT NULL AND company_key <> ''
+      GROUP BY qrn
+    ),
+    qrn_with_priors AS (
+      SELECT
+        qrn,
+        ROW_NUMBER() OVER (PARTITION BY company_key ORDER BY first_seen, qrn) - 1
+          AS prior_qrn_count
+      FROM qrn_first_seen
+    )
+    SELECT iq.qrn, COALESCE(qwp.prior_qrn_count, 0) AS prior_qrn_count
+    FROM input_qrns iq
+    LEFT JOIN qrn_with_priors qwp ON qwp.qrn = iq.qrn
+  `;
+  const { rows } = await readOnlyQuery(sql, [qrnList]);
+  return new Map(rows.map(r => [r.qrn, Number(r.prior_qrn_count) || 0]));
+}
+
+// Stage pipeline: order = least → most progressed. Lost / Unable To Quote are
+// terminal off-pipeline outcomes shown alongside.
+const PIPELINE_STAGES = ['Contacted', 'Need To Quote', 'Need To Re-Quote', 'Quoted', 'Need To Onboard', 'Won'];
+const SIDE_STAGES = ['Lost', 'Unable To Quote'];
+const ALL_STAGES = [...PIPELINE_STAGES, ...SIDE_STAGES];
+
+// Reduce a list of {stage} deals to per-stage counts, pipeline conversions,
+// and Win/Loss percentages.
+function summarizeStages(deals) {
+  const counts = Object.fromEntries(ALL_STAGES.map(s => [s, 0]));
+  let total = 0;
+  for (const d of deals) {
+    if (!d.stage || !(d.stage in counts)) continue;
+    counts[d.stage] += 1;
+    total += 1;
+  }
+  // reachedOrLater[i] = total count of deals currently bucketed at PIPELINE_STAGES[i] or any later pipeline stage.
+  const reachedOrLater = PIPELINE_STAGES.map((_, i) =>
+    PIPELINE_STAGES.slice(i).reduce((s, st) => s + counts[st], 0)
+  );
+  const conversions = PIPELINE_STAGES.slice(0, -1).map((stage, i) => ({
+    from: stage,
+    to: PIPELINE_STAGES[i + 1],
+    pct: reachedOrLater[i] > 0 ? (reachedOrLater[i + 1] / reachedOrLater[i]) * 100 : 0,
+  }));
+  const won = counts['Won'];
+  const lost = counts['Lost'];
+  return {
+    counts,
+    conversions,
+    total,
+    won,
+    lost,
+    win_pct:  total > 0 ? (won  / total) * 100 : 0,
+    loss_pct: total > 0 ? (lost / total) * 100 : 0,
+  };
 }
 
 // Resolves QRN list → company / owner / latest-pricing total from Postgres.
@@ -1532,6 +1620,71 @@ app.get('/api/quoted-potential-revenue', async (req, res) => {
     res.json({ deals: filtered, total, count: filtered.length });
   } catch (err) {
     console.error('quoted-potential-revenue error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 15d. Quote Stages by Rep (all-time, ignores date filter) ────
+app.get('/api/quote-stages-by-rep', async (req, res) => {
+  try {
+    const stageMap = await fetchQrnStages(null, null);
+    if (!stageMap.size) {
+      return res.json({ reps: [], pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
+    }
+    const pgRows = await fetchPostgresDeals([...stageMap.keys()]);
+
+    const byRep = new Map();
+    for (const r of pgRows) {
+      const stage = stageMap.get(r.qrn);
+      if (!stage) continue;
+      if (!r.owner_email) continue;
+      const key = r.owner_email.toLowerCase();
+      if (!byRep.has(key)) {
+        byRep.set(key, { name: r.owner_name || r.owner_email, deals: [] });
+      }
+      byRep.get(key).deals.push({ stage });
+    }
+
+    const reps = [...byRep.values()]
+      .map(r => ({ name: r.name, ...summarizeStages(r.deals) }))
+      .sort((a, b) => b.total - a.total);
+
+    res.json({ reps, pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
+  } catch (err) {
+    console.error('quote-stages-by-rep error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 15e. Quote Stages by New vs Returning Business (all-time) ──
+app.get('/api/quote-stages-by-business-type', async (req, res) => {
+  try {
+    const stageMap = await fetchQrnStages(null, null);
+    if (!stageMap.size) {
+      return res.json({ rows: [], pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
+    }
+    const qrns = [...stageMap.keys()];
+    const [pgRows, priorMap] = await Promise.all([
+      fetchPostgresDeals(qrns),
+      fetchPriorQrnCounts(qrns),
+    ]);
+
+    const buckets = { 'New Business': [], 'Returning Business': [] };
+    for (const r of pgRows) {
+      const stage = stageMap.get(r.qrn);
+      if (!stage) continue;
+      const prior = priorMap.get(r.qrn) || 0;
+      const bucket = prior > 0 ? 'Returning Business' : 'New Business';
+      buckets[bucket].push({ stage });
+    }
+
+    const rows = [
+      { type: 'New Business',       ...summarizeStages(buckets['New Business']) },
+      { type: 'Returning Business', ...summarizeStages(buckets['Returning Business']) },
+    ];
+    res.json({ rows, pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
+  } catch (err) {
+    console.error('quote-stages-by-business-type error:', err);
     res.status(500).json({ error: err.message });
   }
 });
