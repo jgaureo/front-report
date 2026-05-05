@@ -1104,6 +1104,104 @@ function renderWonByMonth(data) {
   });
 }
 
+// ─── Render: Revenue / Onboard / Quoted (Postgres-backed) ─
+const fmtUSD = n => {
+  const v = Number(n) || 0;
+  return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
+};
+
+function renderRevenueByCompany(data) {
+  const el = document.getElementById('revenueByCompany');
+  if (!el) return;
+  const companies = data?.companies || [];
+  if (!companies.length) {
+    el.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No data</div>';
+    return;
+  }
+  const grand = data.grand_total || companies.reduce((s, c) => s + c.quoted_value, 0);
+  const max = Math.max(...companies.map(c => c.quoted_value), 1);
+
+  el.innerHTML = `
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+          <th class="text-left font-semibold py-2">Company</th>
+          <th class="text-right font-semibold py-2">QRNs</th>
+          <th class="text-right font-semibold py-2">Quoted Value</th>
+          <th class="text-right font-semibold py-2 w-32">% of Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${companies.map(c => {
+          const pct = grand > 0 ? (c.quoted_value / grand) * 100 : 0;
+          const barW = (c.quoted_value / max) * 100;
+          return `<tr class="border-b border-slate-50 last:border-0">
+            <td class="py-2 font-semibold text-slate-700">${escHtml(c.name)}</td>
+            <td class="py-2 text-right text-slate-500">${c.qrn_count}</td>
+            <td class="py-2 text-right font-bold text-slate-700">${fmtUSD(c.quoted_value)}</td>
+            <td class="py-2 text-right">
+              <div class="flex items-center gap-2 justify-end">
+                <div class="h-1.5 w-20 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-primary rounded-full" style="width:${barW}%"></div></div>
+                <span class="text-[10px] font-semibold text-slate-500 w-10 text-right">${pct.toFixed(1)}%</span>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="pt-3 text-[10px] text-slate-400">Total across ${data.qrn_total || 0} QRN${data.qrn_total === 1 ? '' : 's'}</td>
+          <td colspan="3" class="pt-3 text-right text-[10px] font-bold text-slate-600">${fmtUSD(grand)}</td>
+        </tr>
+      </tfoot>
+    </table>`;
+}
+
+function renderDealList(elId, data, emptyMsg) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const deals = data?.deals || [];
+  if (!deals.length) {
+    el.innerHTML = `<div class="text-xs text-slate-400 text-center py-4">${emptyMsg}</div>`;
+    return;
+  }
+  const total = data.total || 0;
+  const rows = deals.map(d => `
+    <tr class="border-b border-slate-50 last:border-0">
+      <td class="py-2 font-mono text-[10px] text-slate-600">${escHtml(d.qrn)}</td>
+      <td class="py-2 text-[10px] text-slate-500">${escHtml(d.stage || '—')}</td>
+      <td class="py-2 text-[10px] text-slate-500">${escHtml(d.owner_name || '—')}</td>
+      <td class="py-2 text-right font-bold text-[10px] text-slate-700">${fmtUSD(d.quoted_value)}</td>
+    </tr>`).join('');
+
+  el.innerHTML = `
+    <div class="flex items-baseline justify-between mb-2">
+      <span class="text-[10px] text-slate-400 uppercase tracking-wide font-semibold">${deals.length} deal${deals.length === 1 ? '' : 's'}</span>
+      <span class="text-sm font-bold text-primary">${fmtUSD(total)}</span>
+    </div>
+    <div class="max-h-72 overflow-y-auto">
+      <table class="w-full text-xs">
+        <thead class="sticky top-0 bg-white dark:bg-background-dark/50">
+          <tr class="text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+            <th class="text-left font-semibold py-2">QRN</th>
+            <th class="text-left font-semibold py-2">Deal Stage</th>
+            <th class="text-left font-semibold py-2">Owner</th>
+            <th class="text-right font-semibold py-2">Quoted Value</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+function renderNeedToOnboardRevenue(data) {
+  renderDealList('needToOnboardRevenue', data, 'No deals in Need to Onboard stage');
+}
+
+function renderQuotedPotentialRevenue(data) {
+  renderDealList('quotedPotentialRevenue', data, 'No deals in Quoted stage');
+}
+
 // ─── Render: Direction by Month ──────────────────────────
 let lastDirByMonthData = null;
 
@@ -1454,6 +1552,30 @@ const CHART_INFO = {
       'Useful for workload balancing: tall bars indicate heavy queues, and the status stack reveals whether each rep is blocked on quoting, follow-up, or onboarding.',
     ],
   },
+  'revenue-by-company': {
+    title: 'Revenue by Company (Top 10)',
+    body: [
+      'Top 10 companies by total <b>quoted value</b> across all QRNs in the date range that exist in both BigQuery (Front conversations) and Postgres (rates DB).',
+      'Quoted value sums the <b>latest pricing option</b> per quote — i.e. <code>SUM(sell_amount)</code> on the most recent <code>quote_pricing</code> row per QRN.',
+      'Includes deals at every stage (Won, Lost, Quoted, Need to Onboard, etc.). Companies are grouped by <code>bill_to_org_name</code>; quotes without a billing org fall back to <code>manual_company_name</code>, then \"Unknown\".',
+    ],
+  },
+  'need-to-onboard-revenue': {
+    title: 'Need to Onboard Revenue',
+    body: [
+      'All QRNs whose resolved Front deal stage is <b>Need to Onboard</b>, paired with their owner and the latest quoted value from Postgres.',
+      'Stage is resolved by <b>precedence</b> (since the BigQuery tag table has no per-tag timestamp): Won → Lost → Need to Onboard → Quoted → Need to Quote → Need to Re-Quote → Contacted → Unable to Quote.',
+      'Owner = <code>created_by_user_email</code> on <code>quotes_quote</code>, resolved to first/last name via <code>auth_user</code>.',
+    ],
+  },
+  'quoted-potential-revenue': {
+    title: 'Quoted Potential Revenue',
+    body: [
+      'All QRNs whose resolved Front deal stage is <b>Quoted</b> — i.e. a quote has been sent but the deal has not yet won, lost, or moved to onboarding.',
+      'Same precedence-based stage resolution and same latest-pricing total used by the Need to Onboard widget.',
+      'The total at the top is the upper bound on revenue still in play from quotes already delivered.',
+    ],
+  },
 };
 
 (function initInfoPopover() {
@@ -1713,7 +1835,7 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth, dirByMonth, activeConv, convPerOwner] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth, dirByMonth, activeConv, convPerOwner, revByCompany, needOnboard, quotedPotential] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
@@ -1727,6 +1849,9 @@ async function loadAll() {
       api(`/api/management-direction-by-month?${q}`).catch(() => null),
       api(`/api/management-active-conversations?${q}`).catch(() => null),
       api(`/api/management-conv-per-owner?${q}`).catch(() => null),
+      api(`/api/revenue-by-company?${q}`).catch(() => null),
+      api(`/api/need-to-onboard-revenue?${q}`).catch(() => null),
+      api(`/api/quoted-potential-revenue?${q}`).catch(() => null),
     ]);
 
     teamSchedules = schedules || {};
@@ -1745,6 +1870,9 @@ async function loadAll() {
     renderDirectionByMonth(dirByMonth);
     renderActiveConversations(activeConv);
     renderConvPerOwner(convPerOwner);
+    renderRevenueByCompany(revByCompany);
+    renderNeedToOnboardRevenue(needOnboard);
+    renderQuotedPotentialRevenue(quotedPotential);
   } catch (err) {
     console.error('Load error:', err);
   } finally {

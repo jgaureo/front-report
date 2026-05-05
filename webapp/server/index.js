@@ -5,6 +5,7 @@ import admin from 'firebase-admin';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { calculateBusinessMinutes } from './businessHours.js';
+import { readOnlyQuery } from './db/postgres.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -1368,6 +1369,169 @@ app.get('/api/download-conversations', async (req, res) => {
     res.send(csvRows.join('\n'));
   } catch (err) {
     console.error('download error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 15. Postgres-backed deal endpoints (Revenue / Onboard / Quoted) ──
+//
+// QRN is the unique join key between BigQuery (Front conversations + tags)
+// and Postgres (quotes_quote / quote_pricing / chargelines).
+//
+// Stage precedence (highest → lowest), used because conversation_tag has no
+// per-tag application timestamp:
+//   Won → Lost → Need To Onboard → Quoted → Need To Quote → Need To Re-Quote
+//   → Contacted → Unable To Quote
+//
+// Quoted value = SUM(sell_amount) of the LATEST pricing option per quote
+// (latest = max(quote_pricing.created_at) for the same quote_id).
+
+const STAGE_CASE_SQL = `
+  CASE
+    WHEN MAX(CASE WHEN tag_name = 'won' THEN 1 ELSE 0 END) = 1 THEN 'Won'
+    WHEN MAX(CASE WHEN tag_name = 'lost' THEN 1 ELSE 0 END) = 1 THEN 'Lost'
+    WHEN MAX(CASE WHEN tag_name = 'need to onboard' THEN 1 ELSE 0 END) = 1 THEN 'Need To Onboard'
+    WHEN MAX(CASE WHEN tag_name = 'quoted' THEN 1 ELSE 0 END) = 1 THEN 'Quoted'
+    WHEN MAX(CASE WHEN tag_name = 'need to quote' THEN 1 ELSE 0 END) = 1 THEN 'Need To Quote'
+    WHEN MAX(CASE WHEN tag_name = 'need to requote' THEN 1 ELSE 0 END) = 1 THEN 'Need To Re-Quote'
+    WHEN MAX(CASE WHEN tag_name = 'contacted' THEN 1 ELSE 0 END) = 1 THEN 'Contacted'
+    WHEN MAX(CASE WHEN tag_name = 'unable to quote' THEN 1 ELSE 0 END) = 1 THEN 'Unable To Quote'
+    ELSE NULL
+  END
+`;
+
+// Resolves QRN → stage from BigQuery for the date window. Returns Map<qrn, stage>.
+async function fetchQrnStages(startStr, endStr) {
+  const sql = `
+    WITH qrn_tags AS (
+      SELECT
+        q.quote_request_number AS qrn,
+        LOWER(t.name) AS tag_name
+      FROM \`${FRONT}.conversation\` c
+      ${SALES_INBOX_FILTER}
+      INNER JOIN \`${AI}.email_quote_requests\` q
+        ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+      LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+      LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+    )
+    SELECT qrn, ${STAGE_CASE_SQL} AS stage
+    FROM qrn_tags
+    GROUP BY qrn
+  `;
+  const rows = await runQuery(sql, { start: startStr, end: endStr });
+  return new Map(rows.map(r => [r.qrn, r.stage]));
+}
+
+// Resolves QRN list → company / owner / latest-pricing total from Postgres.
+async function fetchPostgresDeals(qrnList) {
+  if (!qrnList.length) return [];
+  const sql = `
+    WITH input_qrns AS (
+      SELECT UNNEST($1::text[]) AS qrn
+    ),
+    latest_quote AS (
+      SELECT DISTINCT ON (q.qrn)
+        q.id, q.qrn, q.bill_to_org_id, q.bill_to_org_name,
+        q.manual_company_name, q.created_by_user_email
+      FROM quotes_quote q
+      INNER JOIN input_qrns iq ON iq.qrn = q.qrn
+      ORDER BY q.qrn, q.created_at DESC
+    ),
+    latest_pricing AS (
+      SELECT DISTINCT ON (qp.quote_id)
+        qp.quote_id, qp.id AS pricing_id
+      FROM quotes_quotepricing qp
+      WHERE qp.quote_id IN (SELECT id FROM latest_quote)
+      ORDER BY qp.quote_id, qp.created_at DESC
+    ),
+    pricing_totals AS (
+      SELECT lp.quote_id, COALESCE(SUM(qcl.sell_amount), 0) AS quoted_value
+      FROM latest_pricing lp
+      LEFT JOIN quotes_quotechargeline qcl ON qcl.quote_pricing_id = lp.pricing_id
+      GROUP BY lp.quote_id
+    )
+    SELECT
+      lq.qrn,
+      NULLIF(lq.bill_to_org_name, '') AS bill_to_org_name,
+      NULLIF(lq.manual_company_name, '') AS manual_company_name,
+      NULLIF(lq.bill_to_org_id, '') AS bill_to_org_id,
+      lq.created_by_user_email AS owner_email,
+      NULLIF(TRIM(BOTH FROM CONCAT_WS(' ', u.first_name, u.last_name)), '') AS owner_name,
+      COALESCE(pt.quoted_value, 0) AS quoted_value
+    FROM latest_quote lq
+    LEFT JOIN pricing_totals pt ON pt.quote_id = lq.id
+    LEFT JOIN auth_user u ON LOWER(u.email) = LOWER(lq.created_by_user_email)
+  `;
+  const { rows } = await readOnlyQuery(sql, [qrnList]);
+  return rows.map(r => ({
+    qrn: r.qrn,
+    company: r.bill_to_org_name || r.manual_company_name || 'Unknown',
+    bill_to_org_id: r.bill_to_org_id || null,
+    owner_email: r.owner_email || '',
+    owner_name: r.owner_name || r.owner_email || '—',
+    quoted_value: Number(r.quoted_value) || 0,
+  }));
+}
+
+// Combined: BQ stages × Postgres deal data. Only QRNs with both sides present.
+async function getQrnDeals(startStr, endStr) {
+  const stageMap = await fetchQrnStages(startStr, endStr);
+  if (!stageMap.size) return [];
+  const pgRows = await fetchPostgresDeals([...stageMap.keys()]);
+  return pgRows.map(r => ({ ...r, stage: stageMap.get(r.qrn) || null }));
+}
+
+// ─── 15a. Revenue by Company (Top 10) ────────────────────
+app.get('/api/revenue-by-company', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const deals = await getQrnDeals(startStr, endStr);
+
+    const byCompany = new Map();
+    for (const d of deals) {
+      const cur = byCompany.get(d.company) || { name: d.company, quoted_value: 0, qrn_count: 0 };
+      cur.quoted_value += d.quoted_value;
+      cur.qrn_count    += 1;
+      byCompany.set(d.company, cur);
+    }
+    const all = [...byCompany.values()].sort((a, b) => b.quoted_value - a.quoted_value);
+    const grand_total = all.reduce((s, c) => s + c.quoted_value, 0);
+    res.json({ companies: all.slice(0, 10), grand_total, qrn_total: deals.length });
+  } catch (err) {
+    console.error('revenue-by-company error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 15b. Need to Onboard Revenue ────────────────────────
+app.get('/api/need-to-onboard-revenue', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const deals = await getQrnDeals(startStr, endStr);
+    const filtered = deals
+      .filter(d => d.stage === 'Need To Onboard')
+      .sort((a, b) => b.quoted_value - a.quoted_value);
+    const total = filtered.reduce((s, d) => s + d.quoted_value, 0);
+    res.json({ deals: filtered, total, count: filtered.length });
+  } catch (err) {
+    console.error('need-to-onboard-revenue error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── 15c. Quoted Potential Revenue ───────────────────────
+app.get('/api/quoted-potential-revenue', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const deals = await getQrnDeals(startStr, endStr);
+    const filtered = deals
+      .filter(d => d.stage === 'Quoted')
+      .sort((a, b) => b.quoted_value - a.quoted_value);
+    const total = filtered.reduce((s, d) => s + d.quoted_value, 0);
+    res.json({ deals: filtered, total, count: filtered.length });
+  } catch (err) {
+    console.error('quoted-potential-revenue error:', err);
     res.status(500).json({ error: err.message });
   }
 });
