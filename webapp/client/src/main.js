@@ -1224,6 +1224,10 @@ function renderStageTable(elId, data, firstColLabel, firstColKey, emptyMsg) {
   }).join('');
   const sideHeaders = side.map(s => `<th class="text-right font-semibold py-2 px-2 whitespace-nowrap text-slate-400">${escHtml(s)}</th>`).join('');
 
+  // Total column count (first col + stage/arrow cells + side stages + Total + Win% + Loss%)
+  const arrowCount = Math.max(0, pipeline.length - 1);
+  const totalCols = 1 + pipeline.length + arrowCount + side.length + 3;
+
   const bodyRows = rows.map(r => {
     const counts = r.counts || {};
     const conv = r.conversions || [];
@@ -1241,7 +1245,8 @@ function renderStageTable(elId, data, firstColLabel, firstColKey, emptyMsg) {
       return stageTd + arrowTd;
     }).join('');
     const sideCells = side.map(s => `<td class="py-2 px-2 text-right text-slate-400">${counts[s] || 0}</td>`).join('');
-    return `<tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/40">
+    const customers = Array.isArray(r.customers) ? r.customers : null;
+    const mainRow = `<tr class="border-b border-slate-50 last:border-0 hover:bg-slate-50/40">
       <td class="py-2 pr-3 font-semibold text-slate-700 whitespace-nowrap">${escHtml(r[firstColKey] || '—')}</td>
       ${stageCells}
       ${sideCells}
@@ -1249,6 +1254,40 @@ function renderStageTable(elId, data, firstColLabel, firstColKey, emptyMsg) {
       <td class="py-2 px-2 text-right font-bold text-success">${(r.win_pct || 0).toFixed(1)}%</td>
       <td class="py-2 px-2 text-right font-bold text-rose-500">${(r.loss_pct || 0).toFixed(1)}%</td>
     </tr>`;
+    if (!customers || !customers.length) return mainRow;
+    const customerRows = customers.map(c => `
+      <tr class="text-[11px] text-slate-600">
+        <td class="py-1 pl-4 pr-3 whitespace-nowrap">${escHtml(c.name || '—')}</td>
+        <td class="py-1 px-2 text-right">${c.total || 0}</td>
+        <td class="py-1 px-2 text-right text-success">${c.won || 0}</td>
+        <td class="py-1 px-2 text-right text-rose-500">${c.lost || 0}</td>
+        <td class="py-1 px-2 text-right">${(c.win_pct || 0).toFixed(1)}%</td>
+      </tr>`).join('');
+    const detailsRow = `<tr class="border-b border-slate-100">
+      <td colspan="${totalCols}" class="p-0">
+        <details class="group">
+          <summary class="cursor-pointer text-[11px] text-slate-500 hover:text-slate-700 py-1 pl-4 select-none">
+            <span class="group-open:hidden">▸ Show ${customers.length} customer${customers.length === 1 ? '' : 's'}</span>
+            <span class="hidden group-open:inline">▾ Hide customers</span>
+          </summary>
+          <div class="pb-2 pl-2">
+            <table class="w-auto text-[11px]">
+              <thead>
+                <tr class="text-[10px] uppercase tracking-wide text-slate-400">
+                  <th class="text-left font-semibold py-1 pl-4 pr-3">Customer</th>
+                  <th class="text-right font-semibold py-1 px-2">Deals</th>
+                  <th class="text-right font-semibold py-1 px-2">Won</th>
+                  <th class="text-right font-semibold py-1 px-2">Lost</th>
+                  <th class="text-right font-semibold py-1 px-2">Win %</th>
+                </tr>
+              </thead>
+              <tbody>${customerRows}</tbody>
+            </table>
+          </div>
+        </details>
+      </td>
+    </tr>`;
+    return mainRow + detailsRow;
   }).join('');
 
   el.innerHTML = `

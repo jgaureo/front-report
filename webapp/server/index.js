@@ -1670,17 +1670,41 @@ app.get('/api/quote-stages-by-business-type', async (req, res) => {
     ]);
 
     const buckets = { 'New Business': [], 'Returning Business': [] };
+    const customerBuckets = {
+      'New Business': new Map(),
+      'Returning Business': new Map(),
+    };
     for (const r of pgRows) {
       const stage = stageMap.get(r.qrn);
       if (!stage) continue;
       const prior = priorMap.get(r.qrn) || 0;
       const bucket = prior > 0 ? 'Returning Business' : 'New Business';
       buckets[bucket].push({ stage });
+      const company = r.company || 'Unknown';
+      const cmap = customerBuckets[bucket];
+      if (!cmap.has(company)) cmap.set(company, []);
+      cmap.get(company).push({ stage });
     }
 
+    const summarizeCustomers = cmap =>
+      [...cmap.entries()]
+        .map(([name, deals]) => {
+          const s = summarizeStages(deals);
+          return { name, total: s.total, won: s.won, lost: s.lost, win_pct: s.win_pct };
+        })
+        .sort((a, b) => b.total - a.total || b.won - a.won);
+
     const rows = [
-      { type: 'New Business',       ...summarizeStages(buckets['New Business']) },
-      { type: 'Returning Business', ...summarizeStages(buckets['Returning Business']) },
+      {
+        type: 'New Business',
+        ...summarizeStages(buckets['New Business']),
+        customers: summarizeCustomers(customerBuckets['New Business']),
+      },
+      {
+        type: 'Returning Business',
+        ...summarizeStages(buckets['Returning Business']),
+        customers: summarizeCustomers(customerBuckets['Returning Business']),
+      },
     ];
     res.json({ rows, pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
   } catch (err) {
