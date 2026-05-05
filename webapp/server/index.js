@@ -1447,9 +1447,9 @@ async function fetchPriorQrnCounts(qrnList) {
       SELECT DISTINCT ON (q.qrn)
         q.qrn,
         COALESCE(
-          NULLIF(q.bill_to_org_id::text, ''),
-          LOWER(TRIM(q.bill_to_org_name)),
-          LOWER(TRIM(q.manual_company_name))
+          NULLIF(LOWER(TRIM(q.bill_to_org_name)), ''),
+          NULLIF(LOWER(TRIM(q.manual_company_name)), ''),
+          NULLIF(q.bill_to_org_id::text, '')
         ) AS company_key
       FROM quotes_quote q
       WHERE q.qrn IS NOT NULL

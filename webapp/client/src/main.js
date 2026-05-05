@@ -1275,7 +1275,7 @@ function renderStageTable(elId, data, firstColLabel, firstColKey, emptyMsg) {
               <thead>
                 <tr class="text-[10px] uppercase tracking-wide text-slate-400">
                   <th class="text-left font-semibold py-1 pl-4 pr-3">Customer</th>
-                  <th class="text-right font-semibold py-1 px-2">Deals</th>
+                  <th class="text-right font-semibold py-1 px-2">Quotes</th>
                   <th class="text-right font-semibold py-1 px-2">Won</th>
                   <th class="text-right font-semibold py-1 px-2">Lost</th>
                   <th class="text-right font-semibold py-1 px-2">Win %</th>
@@ -1707,7 +1707,7 @@ const CHART_INFO = {
     title: 'Quote Stages by New vs Returning Business',
     body: [
       '<b>All-time</b> view (ignores the date filter). Each row is a business type bucket — <b>New Business</b> or <b>Returning Business</b>.',
-      'A deal is <b>New Business</b> if the company had <b>zero prior QRNs</b> ranked before this one; <b>Returning Business</b> if ≥1 earlier QRN. Each QRN\'s company key is taken from its <b>latest</b> quote (matching the customer name shown), preferring <code>bill_to_org_id</code> and falling back to a normalized <code>bill_to_org_name</code> or <code>manual_company_name</code>. Ranking within a company is by the QRN\'s earliest quote date.',
+      'A deal is <b>New Business</b> if the company had <b>zero prior QRNs</b> ranked before this one; <b>Returning Business</b> if ≥1 earlier QRN. Each QRN\'s company key is taken from its <b>latest</b> quote (matching the customer name shown), preferring the normalized <code>bill_to_org_name</code>, then <code>manual_company_name</code>, then <code>bill_to_org_id</code>. Ranking within a company is by the QRN\'s earliest quote date.',
       'Stage columns, conversion %, and Win/Loss % use the same definitions as the Quote Stages by Rep widget.',
     ],
   },
