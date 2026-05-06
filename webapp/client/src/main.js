@@ -1304,12 +1304,49 @@ function renderStageTable(elId, data, firstColLabel, firstColKey, emptyMsg) {
     </div>`;
 }
 
+let lastQuoteStagesByRepData = null;
+let lastQuoteStagesByBusinessTypeData = null;
+
 function renderQuoteStagesByRep(data) {
+  lastQuoteStagesByRepData = data;
   renderStageTable('quoteStagesByRep', data, 'Rep', 'name', 'No reps with quotes');
 }
 
 function renderQuoteStagesByBusinessType(data) {
+  lastQuoteStagesByBusinessTypeData = data;
   renderStageTable('quoteStagesByBusinessType', data, 'Business Type', 'type', 'No deals classified');
+}
+
+function downloadStageTableCsv(data, firstColLabel, firstColKey, filename) {
+  if (!data) return;
+  const rows = data.reps || data.rows || [];
+  const pipeline = data.pipeline || ['Contacted', 'Need To Quote', 'Quoted', 'Need To Re-Quote', 'Need To Onboard', 'Won'];
+  const side = data.side || ['Lost', 'Unable To Quote'];
+  const header = [firstColLabel];
+  for (const stage of pipeline) { header.push(stage); header.push(`${stage} %`); }
+  for (const s of side) header.push(s);
+  header.push('Total', 'Win %', 'Loss %');
+  const csvRows = [header];
+  for (const r of rows) {
+    const counts = r.counts || {};
+    const stageReach = Array.isArray(r.stage_reach) ? r.stage_reach : [];
+    const row = [r[firstColKey] || ''];
+    pipeline.forEach((_, i) => {
+      const sr = stageReach[i] || { count: 0, pct: 0 };
+      row.push(sr.count || 0);
+      row.push((Number(sr.pct) || 0).toFixed(1));
+    });
+    for (const s of side) row.push(counts[s] || 0);
+    row.push(r.total || 0, (r.win_pct || 0).toFixed(1), (r.loss_pct || 0).toFixed(1));
+    csvRows.push(row);
+  }
+  const csv = csvRows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }
 
 // ─── Render: Direction by Month ──────────────────────────
@@ -1898,6 +1935,15 @@ document.querySelectorAll('.dl-btn').forEach(btn => {
       if (MGMT_CSV_TYPES[type]) {
         const { apiType, filename } = MGMT_CSV_TYPES[type];
         await downloadMgmtCsv(apiType, filename);
+        return;
+      }
+
+      if (type === 'quote-stages-by-rep') {
+        downloadStageTableCsv(lastQuoteStagesByRepData, 'Rep', 'name', 'quote-stages-by-rep.csv');
+        return;
+      }
+      if (type === 'quote-stages-by-business-type') {
+        downloadStageTableCsv(lastQuoteStagesByBusinessTypeData, 'Business Type', 'type', 'quote-stages-by-business-type.csv');
         return;
       }
 
