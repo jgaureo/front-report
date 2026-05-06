@@ -1208,41 +1208,34 @@ function renderStageTable(elId, data, firstColLabel, firstColKey, emptyMsg) {
   const el = document.getElementById(elId);
   if (!el) return;
   const rows = data?.reps || data?.rows || [];
-  const pipeline = data?.pipeline || ['Contacted', 'Need To Quote', 'Need To Re-Quote', 'Quoted', 'Need To Onboard', 'Won'];
+  const pipeline = data?.pipeline || ['Contacted', 'Need To Quote', 'Quoted', 'Need To Re-Quote', 'Need To Onboard', 'Won'];
   const side = data?.side || ['Lost', 'Unable To Quote'];
   if (!rows.length) {
     el.innerHTML = `<div class="text-xs text-slate-400 text-center py-4">${emptyMsg}</div>`;
     return;
   }
-  // Header: first col + (stage, conv%, stage, conv%, ..., final stage) + side stages + Total + Win% + Loss%
-  const stageHeaders = pipeline.map((stage, i) => {
+  // Header: first col + (stage count, stage %) per pipeline stage + side stages + Total + Win% + Loss%
+  const stageHeaders = pipeline.map(stage => {
     const stageTh = `<th class="text-right font-semibold py-2 px-2 whitespace-nowrap">${escHtml(stage)}</th>`;
-    const arrowTh = i < pipeline.length - 1
-      ? `<th class="text-center font-semibold py-2 px-1 text-slate-300">→</th>`
-      : '';
-    return stageTh + arrowTh;
+    const pctTh = `<th class="text-center font-semibold py-2 px-1 text-slate-300">%</th>`;
+    return stageTh + pctTh;
   }).join('');
   const sideHeaders = side.map(s => `<th class="text-right font-semibold py-2 px-2 whitespace-nowrap text-slate-400">${escHtml(s)}</th>`).join('');
 
-  // Total column count (first col + stage/arrow cells + side stages + Total + Win% + Loss%)
-  const arrowCount = Math.max(0, pipeline.length - 1);
-  const totalCols = 1 + pipeline.length + arrowCount + side.length + 3;
+  // Total column count (first col + 2 cells per pipeline stage + side stages + Total + Win% + Loss%)
+  const totalCols = 1 + pipeline.length * 2 + side.length + 3;
 
   const bodyRows = rows.map(r => {
     const counts = r.counts || {};
-    const conv = r.conversions || [];
+    const stageReach = Array.isArray(r.stage_reach) ? r.stage_reach : [];
     const stageCells = pipeline.map((stage, i) => {
-      const cnt = counts[stage] || 0;
+      const sr = stageReach[i] || { count: 0, pct: 0 };
       const cellClass = stage === 'Won' ? 'font-bold text-success' : 'text-slate-700';
-      const stageTd = `<td class="py-2 px-2 text-right ${cellClass}">${cnt}</td>`;
-      let arrowTd = '';
-      if (i < pipeline.length - 1) {
-        const c = conv[i];
-        const pct = c ? c.pct : 0;
-        const tone = pct >= 50 ? 'text-success' : pct >= 20 ? 'text-amber-500' : 'text-slate-400';
-        arrowTd = `<td class="py-2 px-1 text-center text-[10px] font-semibold ${tone}">${pct.toFixed(0)}%</td>`;
-      }
-      return stageTd + arrowTd;
+      const stageTd = `<td class="py-2 px-2 text-right ${cellClass}">${sr.count || 0}</td>`;
+      const pct = Number(sr.pct) || 0;
+      const tone = pct >= 50 ? 'text-success' : pct >= 20 ? 'text-amber-500' : 'text-slate-400';
+      const pctTd = `<td class="py-2 px-1 text-center text-[10px] font-semibold ${tone}">${pct.toFixed(0)}%</td>`;
+      return stageTd + pctTd;
     }).join('');
     const sideCells = side.map(s => `<td class="py-2 px-2 text-right text-slate-400">${counts[s] || 0}</td>`).join('');
     const customers = Array.isArray(r.customers) ? r.customers : null;
@@ -1307,7 +1300,7 @@ function renderStageTable(elId, data, firstColLabel, firstColKey, emptyMsg) {
       </table>
     </div>
     <div class="mt-2 text-[10px] text-slate-400">
-      Conversion % between stages = deals reaching the next stage ÷ deals reaching the current stage (using the precedence-based bucket each deal currently sits in).
+      Each stage shows the cumulative count of deals that reached it (i.e. deals currently bucketed at that stage or any later pipeline stage). The % beside it = that count ÷ the row's total deals.
     </div>`;
 }
 
@@ -1697,9 +1690,9 @@ const CHART_INFO = {
     title: 'Quote Stages by Rep',
     body: [
       '<b>All-time</b> view (ignores the date filter). Each row is a sales rep, each column is a stage in the quote pipeline.',
-      'Pipeline order: <b>Contacted → Need to Quote → Need to Re-Quote → Quoted → Need to Onboard → Won</b>. <b>Lost</b> and <b>Unable to Quote</b> are terminal off-pipeline outcomes shown alongside.',
-      'Each deal is bucketed into a single stage by precedence (Won > Lost > Need to Onboard > Quoted > Need to Quote > Need to Re-Quote > Contacted > Unable to Quote), so Won counts include deals that passed through Quoted earlier.',
-      'The arrow column between two stages shows <code>(deals at the later stage or beyond) ÷ (deals at the earlier stage or beyond)</code> — i.e. survivorship from one stage to the next, not the raw transition rate.',
+      'Pipeline order: <b>Contacted → Need to Quote → Quoted → Need to Re-Quote → Need to Onboard → Won</b>. <b>Lost</b> and <b>Unable to Quote</b> are terminal off-pipeline outcomes shown alongside.',
+      'Each deal is bucketed into a single stage by precedence (Won > Lost > Need to Onboard > Quoted > Need to Quote > Need to Re-Quote > Contacted > Unable to Quote).',
+      'Each stage column shows the <b>cumulative</b> count of the rep\'s deals that reached that stage — i.e. deals currently bucketed at that stage or any later pipeline stage. Lost and Unable to Quote are off-pipeline and excluded from the cumulative count. The <b>%</b> beside each stage = that cumulative count ÷ the rep\'s total deals.',
       '<b>Win %</b> = Won ÷ rep total; <b>Loss %</b> = Lost ÷ rep total. Total counts every bucket including Lost and Unable to Quote. Reps with no resolvable owner are excluded.',
     ],
   },
@@ -1708,7 +1701,7 @@ const CHART_INFO = {
     body: [
       '<b>All-time</b> view (ignores the date filter). Each row is a business type bucket — <b>New Business</b> or <b>Returning Business</b>.',
       'A deal is <b>New Business</b> if the company had <b>zero prior QRNs</b> ranked before this one; <b>Returning Business</b> if ≥1 earlier QRN. Each QRN\'s company key is taken from its <b>latest</b> quote (matching the customer name shown), preferring the normalized <code>bill_to_org_name</code>, then <code>manual_company_name</code>, then <code>bill_to_org_id</code>. Ranking within a company is by the QRN\'s earliest quote date.',
-      'Stage columns, conversion %, and Win/Loss % use the same definitions as the Quote Stages by Rep widget.',
+      'Stage columns, %, and Win/Loss % use the same definitions as the Quote Stages by Rep widget (cumulative count + share of bucket total).',
     ],
   },
 };

@@ -1478,12 +1478,12 @@ async function fetchPriorQrnCounts(qrnList) {
 
 // Stage pipeline: order = least → most progressed. Lost / Unable To Quote are
 // terminal off-pipeline outcomes shown alongside.
-const PIPELINE_STAGES = ['Contacted', 'Need To Quote', 'Need To Re-Quote', 'Quoted', 'Need To Onboard', 'Won'];
+const PIPELINE_STAGES = ['Contacted', 'Need To Quote', 'Quoted', 'Need To Re-Quote', 'Need To Onboard', 'Won'];
 const SIDE_STAGES = ['Lost', 'Unable To Quote'];
 const ALL_STAGES = [...PIPELINE_STAGES, ...SIDE_STAGES];
 
-// Reduce a list of {stage} deals to per-stage counts, pipeline conversions,
-// and Win/Loss percentages.
+// Reduce a list of {stage} deals to per-stage counts, cumulative pipeline reach
+// (count + share of total per stage), and Win/Loss percentages.
 function summarizeStages(deals) {
   const counts = Object.fromEntries(ALL_STAGES.map(s => [s, 0]));
   let total = 0;
@@ -1492,20 +1492,22 @@ function summarizeStages(deals) {
     counts[d.stage] += 1;
     total += 1;
   }
-  // reachedOrLater[i] = total count of deals currently bucketed at PIPELINE_STAGES[i] or any later pipeline stage.
+  // reachedOrLater[i] = deals currently bucketed at PIPELINE_STAGES[i] or any later pipeline stage —
+  // i.e. how many of this rep's deals "reached" that stage at least. Off-pipeline buckets
+  // (Lost, Unable To Quote) are excluded from the cumulative funnel count.
   const reachedOrLater = PIPELINE_STAGES.map((_, i) =>
     PIPELINE_STAGES.slice(i).reduce((s, st) => s + counts[st], 0)
   );
-  const conversions = PIPELINE_STAGES.slice(0, -1).map((stage, i) => ({
-    from: stage,
-    to: PIPELINE_STAGES[i + 1],
-    pct: reachedOrLater[i] > 0 ? (reachedOrLater[i + 1] / reachedOrLater[i]) * 100 : 0,
+  const stage_reach = PIPELINE_STAGES.map((stage, i) => ({
+    stage,
+    count: reachedOrLater[i],
+    pct: total > 0 ? (reachedOrLater[i] / total) * 100 : 0,
   }));
   const won = counts['Won'];
   const lost = counts['Lost'];
   return {
     counts,
-    conversions,
+    stage_reach,
     total,
     won,
     lost,
