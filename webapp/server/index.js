@@ -1599,13 +1599,16 @@ async function getQrnDeals(startStr, endStr) {
 }
 
 // ─── 15a. Revenue by Company (Top 10) ────────────────────
+// Counts only QRNs whose latest quotes_quote.status = 'BOOKED' — i.e. revenue
+// that's actually been won/booked, not still-pending or cancelled deals.
 app.get('/api/revenue-by-company', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const deals = await getQrnDeals(startStr, endStr);
+    const booked = deals.filter(d => d.quote_status === 'BOOKED');
 
     const byCompany = new Map();
-    for (const d of deals) {
+    for (const d of booked) {
       const cur = byCompany.get(d.company) || { name: d.company, quoted_value: 0, qrn_count: 0 };
       cur.quoted_value += d.quoted_value;
       cur.qrn_count    += 1;
@@ -1613,7 +1616,7 @@ app.get('/api/revenue-by-company', async (req, res) => {
     }
     const all = [...byCompany.values()].sort((a, b) => b.quoted_value - a.quoted_value);
     const grand_total = all.reduce((s, c) => s + c.quoted_value, 0);
-    res.json({ companies: all.slice(0, 10), grand_total, qrn_total: deals.length });
+    res.json({ companies: all.slice(0, 10), grand_total, qrn_total: booked.length });
   } catch (err) {
     console.error('revenue-by-company error:', err);
     res.status(500).json({ error: err.message });
@@ -1645,12 +1648,20 @@ app.get('/api/need-to-onboard-revenue', async (req, res) => {
 });
 
 // ─── 15c. Quoted Potential Revenue ───────────────────────
+// A QRN counts as quoted-potential when (1) it carries the "quoted" tag in
+// BigQuery (precedence-agnostic — Front auto-resolution can otherwise rebucket
+// these under won/lost/onboard) AND (2) its latest quotes_quote.status is NOT
+// BOOKED and NOT CANCELLED. The Stage/Status column shows the Postgres status.
+const QUOTED_POTENTIAL_EXCLUDED_STATUSES = new Set(['BOOKED', 'CANCELLED']);
 app.get('/api/quoted-potential-revenue', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
-    const deals = await getQrnDeals(startStr, endStr);
-    const filtered = deals
-      .filter(d => d.stage === 'Quoted')
+    const quotedQrns = await fetchQrnsWithTag('quoted', startStr, endStr);
+    if (!quotedQrns.size) return res.json({ deals: [], total: 0, count: 0 });
+    const pgRows = await fetchPostgresDeals([...quotedQrns]);
+    const filtered = pgRows
+      .filter(r => r.quote_status && !QUOTED_POTENTIAL_EXCLUDED_STATUSES.has(r.quote_status))
+      .map(r => ({ ...r, stage: r.quote_status }))
       .sort((a, b) => b.quoted_value - a.quoted_value);
     const total = filtered.reduce((s, d) => s + d.quoted_value, 0);
     res.json({ deals: filtered, total, count: filtered.length });

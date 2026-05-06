@@ -1184,7 +1184,7 @@ function renderDealList(elId, data, emptyMsg) {
         <thead class="sticky top-0 bg-white dark:bg-background-dark/50">
           <tr class="text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
             <th class="text-left font-semibold py-2">QRN</th>
-            <th class="text-left font-semibold py-2">Deal Stage</th>
+            <th class="text-left font-semibold py-2">Status</th>
             <th class="text-left font-semibold py-2">Owner</th>
             <th class="text-right font-semibold py-2">Quoted Value</th>
           </tr>
@@ -1672,24 +1672,24 @@ const CHART_INFO = {
   'revenue-by-company': {
     title: 'Revenue by Company (Top 10)',
     body: [
-      'Top 10 companies by total <b>quoted value</b> across all QRNs in the date range that exist in both BigQuery (Front conversations) and Postgres (rates DB).',
+      'Top 10 companies by total <b>booked revenue</b> across QRNs in the date range whose latest <code>quotes_quote.status</code> = <code>BOOKED</code> in Postgres (rates DB). Pending, draft, expired, and cancelled quotes are excluded.',
       'Quoted value sums the <b>latest pricing option</b> per quote — i.e. <code>SUM(sell_amount)</code> on the most recent <code>quote_pricing</code> row per QRN.',
-      'Includes deals at every stage (Won, Lost, Quoted, Need to Onboard, etc.). Companies are grouped by <code>bill_to_org_name</code>; quotes without a billing org fall back to <code>manual_company_name</code>, then \"Unknown\".',
+      'Companies are grouped by <code>bill_to_org_name</code>; quotes without a billing org fall back to <code>manual_company_name</code>, then to <code>Unknown (org_id)</code> if only an id is present.',
     ],
   },
   'need-to-onboard-revenue': {
     title: 'Need to Onboard Revenue',
     body: [
       'QRNs that (1) carry the <b>need to onboard</b> tag in BigQuery (precedence-agnostic — counted even if the conversation also has won/lost tags, since Front auto-resolves these and another tag may otherwise win), AND (2) whose latest <code>quotes_quote.status</code> is <b>not</b> <code>BOOKED</code> and <b>not</b> <code>CANCELLED</code>.',
-      'The Stage column shows the Postgres <code>quotes_quote.status</code> (e.g. <code>DRAFT</code>, <code>CUSTOMER_APPROVAL</code>, <code>EXPIRED</code>) so the actual reason a deal is still pending is visible.',
+      'The Status column shows the Postgres <code>quotes_quote.status</code> (e.g. <code>DRAFT</code>, <code>CUSTOMER_APPROVAL</code>, <code>EXPIRED</code>) so the actual reason a deal is still pending is visible.',
       'Quoted value = <code>SUM(sell_amount)</code> on the latest <code>quote_pricing</code> per QRN. Owner = <code>created_by_user_email</code> on <code>quotes_quote</code>, resolved via <code>auth_user</code>.',
     ],
   },
   'quoted-potential-revenue': {
     title: 'Quoted Potential Revenue',
     body: [
-      'All QRNs whose resolved Front deal stage is <b>Quoted</b> — i.e. a quote has been sent but the deal has not yet won, lost, or moved to onboarding.',
-      'Same precedence-based stage resolution and same latest-pricing total used by the Need to Onboard widget.',
+      'QRNs that (1) carry the <b>quoted</b> tag in BigQuery (precedence-agnostic — counted even if the conversation also has won/lost/onboard tags, since Front auto-resolves and another tag may otherwise win), AND (2) whose latest <code>quotes_quote.status</code> is <b>not</b> <code>BOOKED</code> and <b>not</b> <code>CANCELLED</code>.',
+      'The Status column shows the Postgres <code>quotes_quote.status</code> (e.g. <code>DRAFT</code>, <code>CUSTOMER_APPROVAL</code>, <code>EXPIRED</code>) so the state of each pending quote is visible.',
       'The total at the top is the upper bound on revenue still in play from quotes already delivered.',
     ],
   },
