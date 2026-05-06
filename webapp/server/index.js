@@ -1557,7 +1557,7 @@ async function fetchPostgresDeals(qrnList) {
   const { rows } = await readOnlyQuery(sql, [qrnList]);
   return rows.map(r => ({
     qrn: r.qrn,
-    company: r.bill_to_org_name || r.manual_company_name || 'Unknown',
+    company: r.bill_to_org_name || r.manual_company_name || (r.bill_to_org_id ? `Unknown (${r.bill_to_org_id})` : 'Unknown'),
     bill_to_org_id: r.bill_to_org_id || null,
     owner_email: r.owner_email || '',
     owner_name: r.owner_name || r.owner_email || '—',
