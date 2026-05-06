@@ -1524,7 +1524,7 @@ async function fetchPostgresDeals(qrnList) {
     latest_quote AS (
       SELECT DISTINCT ON (q.qrn)
         q.id, q.qrn, q.bill_to_org_id, q.bill_to_org_name,
-        q.manual_company_name, q.created_by_user_email
+        q.manual_company_name, q.created_by_user_email, q.status
       FROM quotes_quote q
       INNER JOIN input_qrns iq ON iq.qrn = q.qrn
       ORDER BY q.qrn, q.created_at DESC
@@ -1549,6 +1549,7 @@ async function fetchPostgresDeals(qrnList) {
       NULLIF(lq.bill_to_org_id, '') AS bill_to_org_id,
       lq.created_by_user_email AS owner_email,
       NULLIF(TRIM(BOTH FROM CONCAT_WS(' ', u.first_name, u.last_name)), '') AS owner_name,
+      lq.status AS quote_status,
       COALESCE(pt.quoted_value, 0) AS quoted_value
     FROM latest_quote lq
     LEFT JOIN pricing_totals pt ON pt.quote_id = lq.id
@@ -1561,8 +1562,32 @@ async function fetchPostgresDeals(qrnList) {
     bill_to_org_id: r.bill_to_org_id || null,
     owner_email: r.owner_email || '',
     owner_name: r.owner_name || r.owner_email || '—',
+    quote_status: r.quote_status || null,
     quoted_value: Number(r.quoted_value) || 0,
   }));
+}
+
+// Returns Set<qrn> of QRNs that carry a given lowercase tag in BigQuery,
+// regardless of other tags or precedence resolution.
+async function fetchQrnsWithTag(tagName, startStr, endStr) {
+  const allTime = !startStr && !endStr;
+  const whereClause = allTime
+    ? ''
+    : 'WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)';
+  const sql = `
+    SELECT DISTINCT q.quote_request_number AS qrn
+    FROM \`${FRONT}.conversation\` c
+    ${SALES_INBOX_FILTER}
+    INNER JOIN \`${AI}.email_quote_requests\` q
+      ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+    INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+    INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
+    ${whereClause}
+    ${whereClause ? 'AND' : 'WHERE'} LOWER(t.name) = @tagName
+  `;
+  const params = allTime ? { tagName } : { start: startStr, end: endStr, tagName };
+  const rows = await runQuery(sql, params);
+  return new Set(rows.map(r => r.qrn));
 }
 
 // Combined: BQ stages × Postgres deal data. Only QRNs with both sides present.
@@ -1596,12 +1621,20 @@ app.get('/api/revenue-by-company', async (req, res) => {
 });
 
 // ─── 15b. Need to Onboard Revenue ────────────────────────
+// A QRN is counted as Need-to-Onboard when (1) it carries the
+// "need to onboard" tag in BigQuery (precedence-agnostic — Front auto-resolves
+// these conversations and another tag may otherwise win), AND (2) its latest
+// quotes_quote.status is NOT BOOKED and NOT CANCELLED.
+const NEED_TO_ONBOARD_EXCLUDED_STATUSES = new Set(['BOOKED', 'CANCELLED']);
 app.get('/api/need-to-onboard-revenue', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
-    const deals = await getQrnDeals(startStr, endStr);
-    const filtered = deals
-      .filter(d => d.stage === 'Need To Onboard')
+    const ntoQrns = await fetchQrnsWithTag('need to onboard', startStr, endStr);
+    if (!ntoQrns.size) return res.json({ deals: [], total: 0, count: 0 });
+    const pgRows = await fetchPostgresDeals([...ntoQrns]);
+    const filtered = pgRows
+      .filter(r => r.quote_status && !NEED_TO_ONBOARD_EXCLUDED_STATUSES.has(r.quote_status))
+      .map(r => ({ ...r, stage: r.quote_status }))
       .sort((a, b) => b.quoted_value - a.quoted_value);
     const total = filtered.reduce((s, d) => s + d.quoted_value, 0);
     res.json({ deals: filtered, total, count: filtered.length });

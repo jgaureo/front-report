@@ -1680,9 +1680,9 @@ const CHART_INFO = {
   'need-to-onboard-revenue': {
     title: 'Need to Onboard Revenue',
     body: [
-      'All QRNs whose resolved Front deal stage is <b>Need to Onboard</b>, paired with their owner and the latest quoted value from Postgres.',
-      'Stage is resolved by <b>precedence</b> (since the BigQuery tag table has no per-tag timestamp): Won → Lost → Need to Onboard → Quoted → Need to Quote → Need to Re-Quote → Contacted → Unable to Quote.',
-      'Owner = <code>created_by_user_email</code> on <code>quotes_quote</code>, resolved to first/last name via <code>auth_user</code>.',
+      'QRNs that (1) carry the <b>need to onboard</b> tag in BigQuery (precedence-agnostic — counted even if the conversation also has won/lost tags, since Front auto-resolves these and another tag may otherwise win), AND (2) whose latest <code>quotes_quote.status</code> is <b>not</b> <code>BOOKED</code> and <b>not</b> <code>CANCELLED</code>.',
+      'The Stage column shows the Postgres <code>quotes_quote.status</code> (e.g. <code>DRAFT</code>, <code>CUSTOMER_APPROVAL</code>, <code>EXPIRED</code>) so the actual reason a deal is still pending is visible.',
+      'Quoted value = <code>SUM(sell_amount)</code> on the latest <code>quote_pricing</code> per QRN. Owner = <code>created_by_user_email</code> on <code>quotes_quote</code>, resolved via <code>auth_user</code>.',
     ],
   },
   'quoted-potential-revenue': {
