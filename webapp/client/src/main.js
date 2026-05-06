@@ -1110,7 +1110,12 @@ const fmtUSD = n => {
   return v.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 };
 
+let lastRevenueByCompanyData = null;
+let lastNeedToOnboardRevenueData = null;
+let lastQuotedPotentialRevenueData = null;
+
 function renderRevenueByCompany(data) {
+  lastRevenueByCompanyData = data;
   const el = document.getElementById('revenueByCompany');
   if (!el) return;
   const companies = data?.companies || [];
@@ -1195,11 +1200,46 @@ function renderDealList(elId, data, emptyMsg) {
 }
 
 function renderNeedToOnboardRevenue(data) {
+  lastNeedToOnboardRevenueData = data;
   renderDealList('needToOnboardRevenue', data, 'No deals in Need to Onboard stage');
 }
 
 function renderQuotedPotentialRevenue(data) {
+  lastQuotedPotentialRevenueData = data;
   renderDealList('quotedPotentialRevenue', data, 'No deals in Quoted stage');
+}
+
+function downloadCsvRows(rows, filename) {
+  const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function downloadRevenueByCompanyCsv(data, filename) {
+  if (!data) return;
+  const companies = data.companies || [];
+  const grand = data.grand_total || companies.reduce((s, c) => s + (Number(c.quoted_value) || 0), 0);
+  const rows = [['Company', 'QRNs', 'Quoted Value', '% of Total']];
+  for (const c of companies) {
+    const val = Number(c.quoted_value) || 0;
+    const pct = grand > 0 ? (val / grand) * 100 : 0;
+    rows.push([c.name, c.qrn_count || 0, val.toFixed(2), pct.toFixed(2)]);
+  }
+  downloadCsvRows(rows, filename);
+}
+
+function downloadDealListCsv(data, filename) {
+  if (!data) return;
+  const deals = data.deals || [];
+  const rows = [['QRN', 'Status', 'Owner', 'Quoted Value']];
+  for (const d of deals) {
+    rows.push([d.qrn || '', d.stage || '', d.owner_name || '', (Number(d.quoted_value) || 0).toFixed(2)]);
+  }
+  downloadCsvRows(rows, filename);
 }
 
 // Shared renderer for the two stage tables. `firstColLabel` and `firstColKey`
@@ -1944,6 +1984,18 @@ document.querySelectorAll('.dl-btn').forEach(btn => {
       }
       if (type === 'quote-stages-by-business-type') {
         downloadStageTableCsv(lastQuoteStagesByBusinessTypeData, 'Business Type', 'type', 'quote-stages-by-business-type.csv');
+        return;
+      }
+      if (type === 'revenue-by-company') {
+        downloadRevenueByCompanyCsv(lastRevenueByCompanyData, 'revenue-by-company.csv');
+        return;
+      }
+      if (type === 'need-to-onboard-revenue') {
+        downloadDealListCsv(lastNeedToOnboardRevenueData, 'need-to-onboard-revenue.csv');
+        return;
+      }
+      if (type === 'quoted-potential-revenue') {
+        downloadDealListCsv(lastQuotedPotentialRevenueData, 'quoted-potential-revenue.csv');
         return;
       }
 
