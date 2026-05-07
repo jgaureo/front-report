@@ -1618,7 +1618,17 @@ app.get('/api/revenue-by-company', async (req, res) => {
     }
     const all = [...byCompany.values()].sort((a, b) => b.quoted_value - a.quoted_value);
     const grand_total = all.reduce((s, c) => s + c.quoted_value, 0);
-    res.json({ companies: all.slice(0, 10), grand_total, qrn_total: booked.length });
+    const bookedDeals = booked
+      .map(d => ({
+        qrn: d.qrn,
+        company: d.company,
+        owner_name: d.owner_name,
+        owner_email: d.owner_email,
+        quote_status: d.quote_status,
+        quoted_value: d.quoted_value,
+      }))
+      .sort((a, b) => b.quoted_value - a.quoted_value);
+    res.json({ companies: all.slice(0, 10), grand_total, qrn_total: booked.length, deals: bookedDeals });
   } catch (err) {
     console.error('revenue-by-company error:', err);
     res.status(500).json({ error: err.message });
@@ -1683,22 +1693,32 @@ app.get('/api/quote-stages-by-rep', async (req, res) => {
     const pgRows = await fetchPostgresDeals([...stageMap.keys()]);
 
     const byRep = new Map();
+    const dealRows = [];
     for (const r of pgRows) {
       const stage = stageMap.get(r.qrn);
       if (!stage) continue;
       if (!r.owner_email) continue;
       const key = r.owner_email.toLowerCase();
+      const repName = r.owner_name || r.owner_email;
       if (!byRep.has(key)) {
-        byRep.set(key, { name: r.owner_name || r.owner_email, deals: [] });
+        byRep.set(key, { name: repName, deals: [] });
       }
       byRep.get(key).deals.push({ stage });
+      dealRows.push({
+        rep_name: repName,
+        qrn: r.qrn,
+        company: r.company,
+        stage,
+        quote_status: r.quote_status,
+        quoted_value: r.quoted_value,
+      });
     }
 
     const reps = [...byRep.values()]
       .map(r => ({ name: r.name, ...summarizeStages(r.deals) }))
       .sort((a, b) => b.total - a.total);
 
-    res.json({ reps, pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
+    res.json({ reps, pipeline: PIPELINE_STAGES, side: SIDE_STAGES, deals: dealRows });
   } catch (err) {
     console.error('quote-stages-by-rep error:', err);
     res.status(500).json({ error: err.message });
@@ -1723,6 +1743,7 @@ app.get('/api/quote-stages-by-business-type', async (req, res) => {
       'New Business': new Map(),
       'Returning Business': new Map(),
     };
+    const dealRows = [];
     for (const r of pgRows) {
       const stage = stageMap.get(r.qrn);
       if (!stage) continue;
@@ -1733,6 +1754,15 @@ app.get('/api/quote-stages-by-business-type', async (req, res) => {
       const cmap = customerBuckets[bucket];
       if (!cmap.has(company)) cmap.set(company, []);
       cmap.get(company).push({ stage });
+      dealRows.push({
+        business_type: bucket,
+        qrn: r.qrn,
+        company,
+        owner_name: r.owner_name,
+        stage,
+        quote_status: r.quote_status,
+        quoted_value: r.quoted_value,
+      });
     }
 
     const summarizeCustomers = cmap =>
@@ -1755,7 +1785,7 @@ app.get('/api/quote-stages-by-business-type', async (req, res) => {
         customers: summarizeCustomers(customerBuckets['Returning Business']),
       },
     ];
-    res.json({ rows, pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
+    res.json({ rows, pipeline: PIPELINE_STAGES, side: SIDE_STAGES, deals: dealRows });
   } catch (err) {
     console.error('quote-stages-by-business-type error:', err);
     res.status(500).json({ error: err.message });

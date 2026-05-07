@@ -1221,13 +1221,16 @@ function downloadCsvRows(rows, filename) {
 
 function downloadRevenueByCompanyCsv(data, filename) {
   if (!data) return;
-  const companies = data.companies || [];
-  const grand = data.grand_total || companies.reduce((s, c) => s + (Number(c.quoted_value) || 0), 0);
-  const rows = [['Company', 'QRNs', 'Quoted Value', '% of Total']];
-  for (const c of companies) {
-    const val = Number(c.quoted_value) || 0;
-    const pct = grand > 0 ? (val / grand) * 100 : 0;
-    rows.push([c.name, c.qrn_count || 0, val.toFixed(2), pct.toFixed(2)]);
+  const deals = data.deals || [];
+  const rows = [['Company', 'QRN', 'Owner', 'Status', 'Quoted Value']];
+  for (const d of deals) {
+    rows.push([
+      d.company || '',
+      d.qrn || '',
+      d.owner_name || '',
+      d.quote_status || '',
+      (Number(d.quoted_value) || 0).toFixed(2),
+    ]);
   }
   downloadCsvRows(rows, filename);
 }
@@ -1235,9 +1238,15 @@ function downloadRevenueByCompanyCsv(data, filename) {
 function downloadDealListCsv(data, filename) {
   if (!data) return;
   const deals = data.deals || [];
-  const rows = [['QRN', 'Status', 'Owner', 'Quoted Value']];
+  const rows = [['QRN', 'Company', 'Status', 'Owner', 'Quoted Value']];
   for (const d of deals) {
-    rows.push([d.qrn || '', d.stage || '', d.owner_name || '', (Number(d.quoted_value) || 0).toFixed(2)]);
+    rows.push([
+      d.qrn || '',
+      d.company || '',
+      d.stage || '',
+      d.owner_name || '',
+      (Number(d.quoted_value) || 0).toFixed(2),
+    ]);
   }
   downloadCsvRows(rows, filename);
 }
@@ -1357,36 +1366,23 @@ function renderQuoteStagesByBusinessType(data) {
   renderStageTable('quoteStagesByBusinessType', data, 'Business Type', 'type', 'No deals classified');
 }
 
-function downloadStageTableCsv(data, firstColLabel, firstColKey, filename) {
+function downloadStageTableCsv(data, firstColLabel, _firstColKey, filename) {
   if (!data) return;
-  const rows = data.reps || data.rows || [];
-  const pipeline = data.pipeline || ['Contacted', 'Need To Quote', 'Quoted', 'Need To Re-Quote', 'Need To Onboard', 'Won'];
-  const side = data.side || ['Lost', 'Unable To Quote'];
-  const header = [firstColLabel];
-  for (const stage of pipeline) { header.push(stage); header.push(`${stage} %`); }
-  for (const s of side) header.push(s);
-  header.push('Total', 'Win %', 'Loss %');
-  const csvRows = [header];
-  for (const r of rows) {
-    const counts = r.counts || {};
-    const stageReach = Array.isArray(r.stage_reach) ? r.stage_reach : [];
-    const row = [r[firstColKey] || ''];
-    pipeline.forEach((_, i) => {
-      const sr = stageReach[i] || { count: 0, pct: 0 };
-      row.push(sr.count || 0);
-      row.push((Number(sr.pct) || 0).toFixed(1));
-    });
-    for (const s of side) row.push(counts[s] || 0);
-    row.push(r.total || 0, (r.win_pct || 0).toFixed(1), (r.loss_pct || 0).toFixed(1));
-    csvRows.push(row);
+  const deals = Array.isArray(data.deals) ? data.deals : [];
+  const groupKey = firstColLabel === 'Rep' ? 'rep_name' : 'business_type';
+  const rows = [[firstColLabel, 'QRN', 'Company', 'Owner', 'Stage', 'Quote Status', 'Quoted Value']];
+  for (const d of deals) {
+    rows.push([
+      d[groupKey] || '',
+      d.qrn || '',
+      d.company || '',
+      d.owner_name || d.rep_name || '',
+      d.stage || '',
+      d.quote_status || '',
+      (Number(d.quoted_value) || 0).toFixed(2),
+    ]);
   }
-  const csv = csvRows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(a.href);
+  downloadCsvRows(rows, filename);
 }
 
 // ─── Render: Direction by Month ──────────────────────────
