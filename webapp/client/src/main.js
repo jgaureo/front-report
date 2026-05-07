@@ -1762,7 +1762,7 @@ const CHART_INFO = {
   'quote-stages-by-rep': {
     title: 'Quote Stages by Rep',
     body: [
-      '<b>All-time</b> view (ignores the date filter). Each row is a sales rep, each column is a stage in the quote pipeline.',
+      'Each row is a sales rep, each column is a stage in the quote pipeline. Respects the dashboard date filter — only QRNs whose conversation falls in the selected window are counted.',
       'Pipeline order: <b>Contacted → Need to Quote → Quoted → Need to Re-Quote → Need to Onboard → Won</b>. <b>Lost</b> and <b>Unable to Quote</b> are terminal off-pipeline outcomes shown alongside.',
       'Each deal is bucketed into a single stage by precedence (Won > Lost > Need to Onboard > Quoted > Need to Quote > Need to Re-Quote > Contacted > Unable to Quote).',
       'Each stage column shows the <b>cumulative</b> count of the rep\'s deals that reached that stage — i.e. deals currently bucketed at that stage or any later pipeline stage. Lost and Unable to Quote are off-pipeline and excluded from the cumulative count. The <b>%</b> beside each stage = that cumulative count ÷ the rep\'s total deals.',
@@ -1772,7 +1772,7 @@ const CHART_INFO = {
   'quote-stages-by-business-type': {
     title: 'Quote Stages by New vs Returning Business',
     body: [
-      '<b>All-time</b> view (ignores the date filter). Each row is a business type bucket — <b>New Business</b> or <b>Returning Business</b>.',
+      'Each row is a business type bucket — <b>New Business</b> or <b>Returning Business</b>. Respects the dashboard date filter — only QRNs whose conversation falls in the selected window are counted (the new-vs-returning determination still looks at all-time history per company).',
       'A deal is <b>New Business</b> if the company had <b>zero prior QRNs</b> ranked before this one; <b>Returning Business</b> if ≥1 earlier QRN. Each QRN\'s company key is taken from its <b>latest</b> quote (matching the customer name shown), preferring the normalized <code>bill_to_org_name</code>, then <code>manual_company_name</code>, then <code>bill_to_org_id</code>. Ranking within a company is by the QRN\'s earliest quote date.',
       'Stage columns, %, and Win/Loss % use the same definitions as the Quote Stages by Rep widget (cumulative count + share of bucket total).',
     ],
@@ -2074,8 +2074,8 @@ async function loadAll() {
       api(`/api/revenue-by-company?${q}`).catch(() => null),
       api(`/api/need-to-onboard-revenue?${q}`).catch(() => null),
       api(`/api/quoted-potential-revenue?${q}`).catch(() => null),
-      api(`/api/quote-stages-by-rep`).catch(() => null),
-      api(`/api/quote-stages-by-business-type`).catch(() => null),
+      api(`/api/quote-stages-by-rep?${q}`).catch(() => null),
+      api(`/api/quote-stages-by-business-type?${q}`).catch(() => null),
     ]);
 
     teamSchedules = schedules || {};

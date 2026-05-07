@@ -1683,10 +1683,11 @@ app.get('/api/quoted-potential-revenue', async (req, res) => {
   }
 });
 
-// ─── 15d. Quote Stages by Rep (all-time, ignores date filter) ────
+// ─── 15d. Quote Stages by Rep ────────────────────────────
 app.get('/api/quote-stages-by-rep', async (req, res) => {
   try {
-    const stageMap = await fetchQrnStages(null, null);
+    const { startStr, endStr } = dateParams(req);
+    const stageMap = await fetchQrnStages(startStr, endStr);
     if (!stageMap.size) {
       return res.json({ reps: [], pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
     }
@@ -1725,10 +1726,11 @@ app.get('/api/quote-stages-by-rep', async (req, res) => {
   }
 });
 
-// ─── 15e. Quote Stages by New vs Returning Business (all-time) ──
+// ─── 15e. Quote Stages by New vs Returning Business ─────
 app.get('/api/quote-stages-by-business-type', async (req, res) => {
   try {
-    const stageMap = await fetchQrnStages(null, null);
+    const { startStr, endStr } = dateParams(req);
+    const stageMap = await fetchQrnStages(startStr, endStr);
     if (!stageMap.size) {
       return res.json({ rows: [], pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
     }
