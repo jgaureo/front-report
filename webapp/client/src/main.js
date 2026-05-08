@@ -57,8 +57,12 @@ function getDateRange(preset) {
 }
 
 let currentRange = getDateRange('this-month');
+const selectedSources = new Set();
 const API_BASE_URL = window.location.hostname === 'localhost' ? '' : 'https://front-report.onrender.com';
-const qs = () => `start=${currentRange.start.toISOString()}&end=${currentRange.end.toISOString()}`;
+const qs = () => {
+  const base = `start=${currentRange.start.toISOString()}&end=${currentRange.end.toISOString()}`;
+  return selectedSources.size ? `${base}&source=${[...selectedSources].join(',')}` : base;
+};
 const api = async (url, opts = {}, _retry) => {
   const headers = { ...(opts.headers || {}) };
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
@@ -126,9 +130,12 @@ function navigateTo(page) {
     if (icon) icon.style.fontVariationSettings = isActive ? "'FILL' 1" : "'FILL' 0";
   });
 
-  // Show date picker only on pricing-dashboard and management-dashboard
+  // Show date picker and source filter only on pricing-dashboard and management-dashboard
+  const onDash = page === 'pricing-dashboard' || page === 'management-dashboard';
   const dp = document.getElementById('datePreset');
-  if (dp) dp.style.display = (page === 'pricing-dashboard' || page === 'management-dashboard') ? '' : 'none';
+  if (dp) dp.style.display = onDash ? '' : 'none';
+  const sf = document.getElementById('sourceFilter');
+  if (sf) sf.style.display = onDash ? '' : 'none';
 
   // Re-render SVG charts now that the page is visible and has real dimensions
   if (page === 'pricing-dashboard' && lastTrendData) renderTrend(lastTrendData);
@@ -2029,6 +2036,25 @@ document.getElementById('applyCustom').addEventListener('click', () => {
     currentRange = { start: new Date(s + 'T00:00:00'), end: new Date(e + 'T23:59:59.999') };
     loadAll();
   }
+});
+
+// ─── Source Capsule Filter ───────────────────────────
+function refreshSourceCapsuleStyles() {
+  document.querySelectorAll('.src-cap').forEach(btn => {
+    const active = selectedSources.has(btn.dataset.source);
+    btn.className = `src-cap rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+      active ? 'bg-primary text-white hover:bg-primary/90' : 'bg-primary/5 text-primary hover:bg-primary/10'
+    }`;
+  });
+}
+document.querySelectorAll('.src-cap').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const src = btn.dataset.source;
+    if (selectedSources.has(src)) selectedSources.delete(src);
+    else selectedSources.add(src);
+    refreshSourceCapsuleStyles();
+    loadAll();
+  });
 });
 
 // ─── Team Performance Sort ───────────────────────────

@@ -174,6 +174,23 @@ function dateParams(req) {
   return { startStr: start.toISOString(), endStr: end.toISOString() };
 }
 
+// Capsule "source" filter — narrows conversations by recipient channel.
+// Selected types come from req.query.source as a comma-separated list.
+// Empty / unrecognized → no filter applied.
+const SOURCE_TYPE_CLAUSES = {
+  marketplace: `(LOWER(c.recipient_role) = 'from' AND REGEXP_CONTAINS(LOWER(c.recipient_handle), r'@(freightos\\.com|cargo\\.one|searates\\.com)$'))`,
+  resellers:   `(LOWER(c.recipient_role) = 'from' AND REGEXP_CONTAINS(LOWER(c.recipient_handle), r'@(inxpress\\.com|freightmango\\.com)$'))`,
+  website:     `(LOWER(c.recipient_role) = 'from' AND LOWER(c.recipient_handle) = 'new.contact@freightright.com')`,
+};
+function typeFilterClause(req) {
+  const types = String(req.query.source || '')
+    .split(',')
+    .map(t => t.trim().toLowerCase())
+    .filter(t => t in SOURCE_TYPE_CLAUSES);
+  if (!types.length) return '';
+  return ` AND (${types.map(t => SOURCE_TYPE_CLAUSES[t]).join(' OR ')})`;
+}
+
 async function runQuery(sql, params = {}) {
   const options = { query: sql, params, location: 'US' };
   const [rows] = await bigquery.query(options);
@@ -212,6 +229,7 @@ app.post('/api/team-schedules', async (req, res) => {
 app.get('/api/dashboard-stats', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       WITH base AS (
         SELECT
@@ -238,7 +256,7 @@ app.get('/api/dashboard-stats', async (req, res) => {
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
         LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         GROUP BY c.id, c.status, c.status_category, qr_mode
       )
       SELECT
@@ -336,13 +354,14 @@ app.get('/api/dashboard-stats', async (req, res) => {
 app.get('/api/conversation-trend', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       WITH convs AS (
         SELECT FORMAT_TIMESTAMP('%Y-%m-%d', c.created_at, '${TZ}') AS day,
                COUNT(*) AS count_conversations
         FROM \`${FRONT}.conversation\` c
         ${SALES_INBOX_FILTER}
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         GROUP BY 1
       ),
       replies AS (
@@ -381,6 +400,7 @@ app.get('/api/conversation-trend', async (req, res) => {
 app.get('/api/team-performance', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       -- Sales Team inbox conversations (reusable filter for all CTEs)
       WITH sales_convos AS (
@@ -395,7 +415,7 @@ app.get('/api/team-performance', async (req, res) => {
         FROM \`${FRONT}.conversation\` c
         INNER JOIN sales_convos sc ON sc.conversation_id = c.id
         WHERE c.status IN ('assigned','unassigned')
-          AND c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+          AND c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         GROUP BY 1
       ),
       msg_activity AS (
@@ -575,6 +595,7 @@ app.get('/api/zero-replies-conversations', async (req, res) => {
 app.get('/api/top-accounts', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       SELECT
         a.name AS account_name,
@@ -588,7 +609,7 @@ app.get('/api/top-accounts', async (req, res) => {
       JOIN \`${FRONT}.message_recipient\` mr ON mr.message_id = m.id
       JOIN \`${FRONT}.contact\` ct ON ct.id = mr.contact_id
       JOIN \`${FRONT}.account\` a ON a.id = ct.account_id
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         AND a.name IS NOT NULL AND a.name != ''
       GROUP BY a.name
       ORDER BY total DESC
@@ -613,6 +634,7 @@ app.get('/api/top-accounts', async (req, res) => {
 app.get('/api/management-kpis', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const start = new Date(startStr);
     const end   = new Date(endStr);
     const duration    = end.getTime() - start.getTime();
@@ -635,7 +657,7 @@ app.get('/api/management-kpis', async (req, res) => {
         LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
           AND q.quote_request_number IS NOT NULL
         GROUP BY c.id, q.quote_request_number
       )
@@ -659,7 +681,7 @@ app.get('/api/management-kpis', async (req, res) => {
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
         INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
           AND LOWER(t.name) IN ('contacted','need to quote','quoted','need to requote','need to onboard','pending review')
       )
       SELECT
@@ -691,7 +713,7 @@ app.get('/api/management-kpis', async (req, res) => {
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         GROUP BY day, qrn
       )
       SELECT day, COUNT(*) AS total, SUM(is_won) AS won, SUM(is_lost) AS lost
@@ -740,6 +762,7 @@ app.get('/api/management-kpis', async (req, res) => {
 app.get('/api/management-win-rate', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       WITH base AS (
         SELECT
@@ -752,7 +775,7 @@ app.get('/api/management-win-rate', async (req, res) => {
         LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
           AND q.quote_request_number IS NOT NULL
         GROUP BY 1, 2
       )
@@ -782,6 +805,7 @@ app.get('/api/management-win-rate', async (req, res) => {
 app.get('/api/management-freight-breakdown', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       WITH per_conv AS (
         SELECT
@@ -807,7 +831,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         GROUP BY c.id, direction, qr_mode
       ),
       breakdown AS (
@@ -890,6 +914,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
 app.get('/api/management-no-direction', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       SELECT DISTINCT
         c.id AS conversation_id,
@@ -898,7 +923,7 @@ app.get('/api/management-no-direction', async (req, res) => {
       ${SALES_INBOX_FILTER}
       INNER JOIN \`${AI}.email_quote_requests\` q
         ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         AND LOWER(REPLACE(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), ''), '-', ''))
             NOT IN ('import','export','domestic','crosstrade')
       ORDER BY c.id
@@ -915,6 +940,7 @@ app.get('/api/management-no-direction', async (req, res) => {
 app.get('/api/management-no-qrn-won', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       SELECT DISTINCT c.id AS conversation_id
       FROM \`${FRONT}.conversation\` c
@@ -923,7 +949,7 @@ app.get('/api/management-no-qrn-won', async (req, res) => {
       INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'won'
       LEFT JOIN \`${AI}.email_quote_requests\` q
         ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         AND q.quote_request_number IS NULL
       ORDER BY c.id
     `;
@@ -939,6 +965,7 @@ app.get('/api/management-no-qrn-won', async (req, res) => {
 app.get('/api/management-won-by-month', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       WITH won_qrns AS (
         -- QRN-level won deals: same logic as management-kpis
@@ -952,7 +979,7 @@ app.get('/api/management-won-by-month', async (req, res) => {
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
         INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'won'
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         GROUP BY month, qrn, direction
       ),
       no_qrn AS (
@@ -964,7 +991,7 @@ app.get('/api/management-won-by-month', async (req, res) => {
         INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'won'
         LEFT JOIN \`${AI}.email_quote_requests\` q
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
           AND q.quote_request_number IS NULL
       )
       SELECT month, direction, COUNT(DISTINCT qrn) AS won_count
@@ -1006,6 +1033,7 @@ app.get('/api/management-won-by-month', async (req, res) => {
 app.get('/api/management-active-conversations', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       WITH active_convs AS (
         SELECT
@@ -1021,7 +1049,7 @@ app.get('/api/management-active-conversations', async (req, res) => {
         ${SALES_INBOX_FILTER}
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
           AND c.status IN ('assigned','unassigned')
         GROUP BY c.id, c.status
       )
@@ -1068,6 +1096,7 @@ app.get('/api/management-active-conversations', async (req, res) => {
 app.get('/api/management-conv-per-owner', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       SELECT
         FORMAT_TIMESTAMP('%Y-%m', c.created_at, '${TZ}') AS month,
@@ -1076,7 +1105,7 @@ app.get('/api/management-conv-per-owner', async (req, res) => {
       FROM \`${FRONT}.conversation\` c
       ${SALES_INBOX_FILTER}
       LEFT JOIN \`${FRONT}.teammate\` tm ON tm.id = c.teammate_id
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
       GROUP BY month, owner
       ORDER BY month, conv_count DESC
     `;
@@ -1107,6 +1136,7 @@ app.get('/api/management-conv-per-owner', async (req, res) => {
 app.get('/api/management-direction-by-month', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const sql = `
       SELECT
         FORMAT_TIMESTAMP('%Y-%m', c.created_at, '${TZ}') AS month,
@@ -1116,7 +1146,7 @@ app.get('/api/management-direction-by-month', async (req, res) => {
       ${SALES_INBOX_FILTER}
       INNER JOIN \`${AI}.email_quote_requests\` q
         ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
       GROUP BY month, direction
       ORDER BY month, direction
     `;
@@ -1149,6 +1179,7 @@ app.get('/api/management-direction-by-month', async (req, res) => {
 app.get('/api/management-download', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
     const type = req.query.type || '';
 
     const TYPE_FILTERS = {
@@ -1188,7 +1219,7 @@ app.get('/api/management-download', async (req, res) => {
         LEFT JOIN \`${FRONT}.teammate\` tm ON tm.id = c.teammate_id
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
         GROUP BY c.id, c.status, owner
       )
       SELECT
@@ -1292,17 +1323,18 @@ app.get('/api/download-conversations', async (req, res) => {
   try {
     const type = req.query.type || 'conversation-trend';
     const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
 
     let whereClause = '';
     if (type === 'conversation-trend') {
-      whereClause = `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)`;
+      whereClause = `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}`;
     } else if (type === 'team-assignments') {
       whereClause = `WHERE c.id IN (
         SELECT DISTINCT conversation_id
         FROM \`${FRONT}.conversation_status_history\`
         WHERE status = 'assign'
           AND updated_at >= TIMESTAMP(@start) AND updated_at <= TIMESTAMP(@end)
-      )`;
+      ) ${typeClause}`;
     } else if (type === 'pending-replies') {
       // Handled separately below via Front.com API — not BigQuery
     }
@@ -1402,11 +1434,11 @@ const STAGE_CASE_SQL = `
 
 // Resolves QRN → stage from BigQuery. Pass null for both dates to get all-time.
 // Returns Map<qrn, stage>.
-async function fetchQrnStages(startStr, endStr) {
+async function fetchQrnStages(startStr, endStr, typeClause = '') {
   const allTime = !startStr && !endStr;
   const whereClause = allTime
     ? ''
-    : 'WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)';
+    : `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}`;
   const sql = `
     WITH qrn_tags AS (
       SELECT
@@ -1571,11 +1603,11 @@ async function fetchPostgresDeals(qrnList) {
 
 // Returns Set<qrn> of QRNs that carry a given lowercase tag in BigQuery,
 // regardless of other tags or precedence resolution.
-async function fetchQrnsWithTag(tagName, startStr, endStr) {
+async function fetchQrnsWithTag(tagName, startStr, endStr, typeClause = '') {
   const allTime = !startStr && !endStr;
   const whereClause = allTime
     ? ''
-    : 'WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)';
+    : `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}`;
   const sql = `
     SELECT DISTINCT q.quote_request_number AS qrn
     FROM \`${FRONT}.conversation\` c
@@ -1593,8 +1625,8 @@ async function fetchQrnsWithTag(tagName, startStr, endStr) {
 }
 
 // Combined: BQ stages × Postgres deal data. Only QRNs with both sides present.
-async function getQrnDeals(startStr, endStr) {
-  const stageMap = await fetchQrnStages(startStr, endStr);
+async function getQrnDeals(startStr, endStr, typeClause = '') {
+  const stageMap = await fetchQrnStages(startStr, endStr, typeClause);
   if (!stageMap.size) return [];
   const pgRows = await fetchPostgresDeals([...stageMap.keys()]);
   return pgRows.map(r => ({ ...r, stage: stageMap.get(r.qrn) || null }));
@@ -1606,7 +1638,8 @@ async function getQrnDeals(startStr, endStr) {
 app.get('/api/revenue-by-company', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
-    const deals = await getQrnDeals(startStr, endStr);
+    const typeClause = typeFilterClause(req);
+    const deals = await getQrnDeals(startStr, endStr, typeClause);
     const booked = deals.filter(d => d.quote_status === 'BOOKED');
 
     const byCompany = new Map();
@@ -1644,7 +1677,8 @@ const NEED_TO_ONBOARD_EXCLUDED_STATUSES = new Set(['BOOKED', 'CANCELLED']);
 app.get('/api/need-to-onboard-revenue', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
-    const ntoQrns = await fetchQrnsWithTag('need to onboard', startStr, endStr);
+    const typeClause = typeFilterClause(req);
+    const ntoQrns = await fetchQrnsWithTag('need to onboard', startStr, endStr, typeClause);
     if (!ntoQrns.size) return res.json({ deals: [], total: 0, count: 0 });
     const pgRows = await fetchPostgresDeals([...ntoQrns]);
     const filtered = pgRows
@@ -1668,7 +1702,8 @@ const QUOTED_POTENTIAL_EXCLUDED_STATUSES = new Set(['BOOKED', 'CANCELLED']);
 app.get('/api/quoted-potential-revenue', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
-    const quotedQrns = await fetchQrnsWithTag('quoted', startStr, endStr);
+    const typeClause = typeFilterClause(req);
+    const quotedQrns = await fetchQrnsWithTag('quoted', startStr, endStr, typeClause);
     if (!quotedQrns.size) return res.json({ deals: [], total: 0, count: 0 });
     const pgRows = await fetchPostgresDeals([...quotedQrns]);
     const filtered = pgRows
@@ -1687,7 +1722,8 @@ app.get('/api/quoted-potential-revenue', async (req, res) => {
 app.get('/api/quote-stages-by-rep', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
-    const stageMap = await fetchQrnStages(startStr, endStr);
+    const typeClause = typeFilterClause(req);
+    const stageMap = await fetchQrnStages(startStr, endStr, typeClause);
     if (!stageMap.size) {
       return res.json({ reps: [], pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
     }
@@ -1730,7 +1766,8 @@ app.get('/api/quote-stages-by-rep', async (req, res) => {
 app.get('/api/quote-stages-by-business-type', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
-    const stageMap = await fetchQrnStages(startStr, endStr);
+    const typeClause = typeFilterClause(req);
+    const stageMap = await fetchQrnStages(startStr, endStr, typeClause);
     if (!stageMap.size) {
       return res.json({ rows: [], pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
     }

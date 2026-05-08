@@ -80,6 +80,12 @@
       <img src="/src/assets/logo.png" alt="Freight Right" class="h-8" />
     </div>
     <div class="flex items-center gap-2">
+      <!-- Source capsule filter (Dashboard only) -->
+      <div id="sourceFilter" class="flex items-center gap-1">
+        <button type="button" data-source="marketplace" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Marketplace</button>
+        <button type="button" data-source="resellers" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Resellers</button>
+        <button type="button" data-source="website" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Website</button>
+      </div>
       <!-- Search -->
       <button id="searchToggle" class="size-10 flex items-center justify-center rounded-full bg-primary/5 text-primary" title="Search">
         <span class="material-symbols-outlined">search</span>
