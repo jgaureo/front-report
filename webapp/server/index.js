@@ -1213,7 +1213,8 @@ app.get('/api/management-download', async (req, res) => {
               ELSE COALESCE(JSON_VALUE(q.quote_data, '$.direction'), '')
             END
           ) AS direction,
-          MAX(CASE WHEN LOWER(t.name) = 'won' THEN 1 ELSE 0 END) AS is_won
+          MAX(CASE WHEN LOWER(t.name) = 'won'  THEN 1 ELSE 0 END) AS is_won,
+          MAX(CASE WHEN LOWER(t.name) = 'lost' THEN 1 ELSE 0 END) AS is_lost
         FROM \`${FRONT}.conversation\` c
         ${SALES_INBOX_FILTER}
         LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
@@ -1227,7 +1228,10 @@ app.get('/api/management-download', async (req, res) => {
         id AS conversation_id,
         COALESCE(qrn, '') AS qrn,
         owner,
-        direction
+        direction,
+        CASE WHEN is_won = 1 THEN 'Won'
+             WHEN is_lost = 1 THEN 'Lost'
+             ELSE 'Any status' END AS outcome
       FROM conv_base
       WHERE ${filter}
       ORDER BY conversation_id
@@ -1239,6 +1243,7 @@ app.get('/api/management-download', async (req, res) => {
       qrn:             r.qrn || '',
       owner:           r.owner,
       direction:       r.direction,
+      outcome:         r.outcome,
     })));
   } catch (err) {
     console.error('management-download error:', err);

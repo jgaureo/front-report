@@ -1949,8 +1949,8 @@ if (document.getElementById('closeScheduleModal')) {
 // Shared helper: downloads conversation-level CSV with uniform columns
 async function downloadMgmtCsv(apiType, filename) {
   const rows = await api(`/api/management-download?type=${apiType}&${qs()}`);
-  const csvRows = [['Conversation ID', 'QRN', 'Owner', 'Direction']];
-  for (const r of rows) csvRows.push([r.conversation_id, r.qrn, r.owner, r.direction]);
+  const csvRows = [['Conversation ID', 'QRN', 'Owner', 'Direction', 'Outcome']];
+  for (const r of rows) csvRows.push([r.conversation_id, r.qrn, r.owner, r.direction, r.outcome]);
   const csv = csvRows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
   const a = document.createElement('a');
