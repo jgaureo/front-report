@@ -181,6 +181,7 @@ const SOURCE_TYPE_CLAUSES = {
   marketplace: `(LOWER(c.recipient_role) = 'from' AND REGEXP_CONTAINS(LOWER(c.recipient_handle), r'@(freightos\\.com|cargo\\.one|searates\\.com)$'))`,
   resellers:   `(LOWER(c.recipient_role) = 'from' AND REGEXP_CONTAINS(LOWER(c.recipient_handle), r'@(inxpress\\.com|freightmango\\.com)$'))`,
   website:     `(LOWER(c.recipient_role) = 'from' AND LOWER(c.recipient_handle) = 'new.contact@freightright.com')`,
+  other:       `(NOT (LOWER(c.recipient_role) = 'from' AND (REGEXP_CONTAINS(LOWER(c.recipient_handle), r'@(freightos\\.com|cargo\\.one|searates\\.com|inxpress\\.com|freightmango\\.com)$') OR LOWER(c.recipient_handle) = 'new.contact@freightright.com')))`,
 };
 function typeFilterClause(req) {
   const types = String(req.query.source || '')
