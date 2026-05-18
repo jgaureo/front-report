@@ -410,13 +410,17 @@ app.get('/api/team-performance', async (req, res) => {
         INNER JOIN \`${FRONT}.inbox\` ib_s ON ib_s.id = ci_s.inbox_id AND LOWER(ib_s.name) = 'sales team'
       ),
       assigned AS (
+        -- Currently assigned (live state). Date filter intentionally NOT applied —
+        -- this reflects who owns each open sales-inbox conversation right now,
+        -- regardless of when the assignment happened.
         SELECT
           c.teammate_id AS teammate_id,
           COUNT(DISTINCT c.id) AS assigned_convos
         FROM \`${FRONT}.conversation\` c
         INNER JOIN sales_convos sc ON sc.conversation_id = c.id
-        WHERE c.status IN ('assigned','unassigned')
-          AND c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.teammate_id IS NOT NULL
+          AND c.status IN ('assigned','unassigned')
+          ${typeClause}
         GROUP BY 1
       ),
       msg_activity AS (
