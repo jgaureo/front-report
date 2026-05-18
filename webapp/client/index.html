@@ -217,7 +217,7 @@
                 <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap cursor-pointer hover:text-primary transition-colors" data-sort="name">Teammate <span class="sort-arrow"></span></th>
                 <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="assigned_conversations">
                   Assigned <span class="sort-arrow">↓</span>
-                  <div class="tip-content"><div class="tip-title">Currently assigned</div>Open sales-inbox conversations whose current assignee is this teammate, reflecting live state from Front. The dashboard date filter does <b>not</b> apply to this column — it shows present-day workload regardless of when each conversation was created or reassigned.</div>
+                  <div class="tip-content"><div class="tip-title">Assigned in period</div>Sales-inbox conversations whose <b>latest</b> assignment event falls within the selected date range, counted against the teammate who received that final assignment. If a conversation was reassigned multiple times in the window, only the last assignee counts.</div>
                 </th>
                 <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="touched_conversations">
                   Touched <span class="sort-arrow"></span>

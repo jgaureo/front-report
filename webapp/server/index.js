@@ -409,19 +409,25 @@ app.get('/api/team-performance', async (req, res) => {
         FROM \`${FRONT}.conversation_inbox\` ci_s
         INNER JOIN \`${FRONT}.inbox\` ib_s ON ib_s.id = ci_s.inbox_id AND LOWER(ib_s.name) = 'sales team'
       ),
-      assigned AS (
-        -- Currently assigned (live state). Date filter intentionally NOT applied —
-        -- this reflects who owns each open sales-inbox conversation right now,
-        -- regardless of when the assignment happened.
+      latest_assign AS (
+        -- Latest assignment event per conversation within the date window.
+        -- If a conversation was reassigned A -> B -> A inside the window, only the final assignee counts.
         SELECT
-          c.teammate_id AS teammate_id,
-          COUNT(DISTINCT c.id) AS assigned_convos
-        FROM \`${FRONT}.conversation\` c
-        INNER JOIN sales_convos sc ON sc.conversation_id = c.id
-        WHERE c.teammate_id IS NOT NULL
-          AND c.status IN ('assigned','unassigned')
+          csh.conversation_id,
+          ARRAY_AGG(csh.target_teammate_id ORDER BY csh.updated_at DESC LIMIT 1)[OFFSET(0)] AS teammate_id
+        FROM \`${FRONT}.conversation_status_history\` csh
+        INNER JOIN sales_convos sc ON sc.conversation_id = csh.conversation_id
+        INNER JOIN \`${FRONT}.conversation\` c ON c.id = csh.conversation_id
+        WHERE LOWER(csh.status) = 'assign'
+          AND csh.updated_at >= TIMESTAMP(@start) AND csh.updated_at <= TIMESTAMP(@end)
+          AND csh.target_teammate_id IS NOT NULL
           ${typeClause}
-        GROUP BY 1
+        GROUP BY csh.conversation_id
+      ),
+      assigned AS (
+        SELECT teammate_id, COUNT(DISTINCT conversation_id) AS assigned_convos
+        FROM latest_assign
+        GROUP BY teammate_id
       ),
       msg_activity AS (
         SELECT
