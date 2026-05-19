@@ -428,25 +428,45 @@ function renderPending(data) {
 // ─── Render: Teams Directory Page ───────────────────
 function renderTeamDirectory(data) {
   const el = document.getElementById('teamDirectory');
-  if (!data || !data.length) { el.innerHTML = '<div class="p-6 text-center text-xs text-slate-400">No team data</div>'; return; }
+  const countEl = document.getElementById('teamCount');
+  if (!data || !data.length) {
+    el.innerHTML = '<div class="col-span-full p-6 text-center text-xs text-slate-400">No team data</div>';
+    if (countEl) countEl.textContent = '';
+    return;
+  }
+  if (countEl) countEl.textContent = `${data.length} teammate${data.length === 1 ? '' : 's'}`;
 
   el.innerHTML = data.map(tm => {
     const ini = initials(tm.first_name, tm.last_name);
     const c = avatarColor(tm.name);
-    return `<div class="p-4 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="h-12 w-12 rounded-full flex items-center justify-center text-sm font-bold text-white border border-slate-200 dark:border-slate-700" style="background:${c}">${ini}</div>
-        <div>
-          <p class="font-bold text-slate-900 dark:text-slate-100">${escHtml(tm.name)}</p>
-          <p class="text-xs text-slate-500">${tm.assigned_conversations} assigned · ${tm.messages_sent} messages</p>
+    return `<div class="bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 shadow-sm p-3 hover:shadow-md transition-shadow">
+      <div class="flex items-start gap-3">
+        <div class="size-10 shrink-0 rounded-full flex items-center justify-center text-xs font-bold text-white" style="background:${c}">${ini}</div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-start justify-between gap-2">
+            <p class="text-sm font-bold text-slate-900 dark:text-slate-100 truncate leading-tight">${escHtml(tm.name)}</p>
+            <button class="size-6 shrink-0 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-primary hover:bg-primary/5 edit-schedule-btn" data-id="${tm.teammate_id}" data-name="${escHtml(tm.first_name)}" title="Edit schedule">
+              <span class="material-symbols-outlined text-base">schedule</span>
+            </button>
+          </div>
+          <span class="inline-flex items-center gap-1 mt-1 text-[10px] font-semibold uppercase tracking-wider text-green-700 dark:text-green-400">
+            <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Active
+          </span>
         </div>
       </div>
-      <div class="flex flex-col items-end gap-1.5">
-        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-          <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>Active
-        </span>
-        <button class="text-[10px] font-bold text-primary hover:underline edit-schedule-btn" data-id="${tm.teammate_id}" data-name="${escHtml(tm.first_name)}">Edit Schedule</button>
-        <p class="text-[10px] text-slate-400 mt-1 font-medium">Avg reply: ${fmtMin(tm.avg_reply_minutes)}</p>
+      <div class="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-1 text-center">
+        <div>
+          <p class="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">${tm.assigned_conversations}</p>
+          <p class="text-[10px] uppercase tracking-wider text-slate-400 mt-0.5">Assigned</p>
+        </div>
+        <div class="border-x border-slate-100 dark:border-slate-800">
+          <p class="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">${tm.messages_sent}</p>
+          <p class="text-[10px] uppercase tracking-wider text-slate-400 mt-0.5">Msgs</p>
+        </div>
+        <div>
+          <p class="text-sm font-bold text-slate-900 dark:text-slate-100 tabular-nums">${fmtMin(tm.avg_reply_minutes)}</p>
+          <p class="text-[10px] uppercase tracking-wider text-slate-400 mt-0.5">Avg reply</p>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -2083,14 +2103,18 @@ function renderClsChips() {
   const meta = document.getElementById('clsMeta');
   const saveBtn = document.getElementById('clsSaveBtn');
   if (!wrap) return;
+  ['direct', 'indirect'].forEach(t => {
+    const cnt = document.querySelector(`[data-cls-count="${t}"]`);
+    if (cnt) cnt.textContent = clsState[t].length;
+  });
   const list = clsCurrentList();
   if (!list.length) { wrap.innerHTML = ''; empty?.classList.remove('hidden'); }
   else {
     empty?.classList.add('hidden');
     wrap.innerHTML = list.map(d => `
-      <span class="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-medium">
+      <span class="inline-flex items-center gap-0.5 rounded-full bg-primary/10 text-primary pl-2.5 pr-1 py-0.5 text-[11px] font-medium">
         ${d}
-        <button type="button" data-rm="${d}" class="ml-1 text-primary/60 hover:text-primary" aria-label="Remove ${d}">&times;</button>
+        <button type="button" data-rm="${d}" class="size-4 inline-flex items-center justify-center rounded-full text-primary/60 hover:text-primary hover:bg-primary/10" aria-label="Remove ${d}">&times;</button>
       </span>`).join('');
     wrap.querySelectorAll('button[data-rm]').forEach(b => b.addEventListener('click', () => {
       const v = b.dataset.rm;
@@ -2115,7 +2139,7 @@ function setClsTab(tab) {
   clsState.activeTab = tab;
   document.querySelectorAll('.cls-tab').forEach(b => {
     const active = b.dataset.clsTab === tab;
-    b.className = `cls-tab px-4 py-1.5 rounded-md text-sm font-medium ${active ? 'bg-white dark:bg-transparent shadow-sm text-primary dark:text-slate-200' : 'text-slate-500 dark:text-white'}`;
+    b.className = `cls-tab inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium ${active ? 'bg-white dark:bg-transparent shadow-sm text-primary dark:text-slate-200' : 'text-slate-500 dark:text-white'}`;
   });
   renderClsChips();
 }
