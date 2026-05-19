@@ -192,6 +192,55 @@ function typeFilterClause(req) {
   return ` AND (${types.map(t => SOURCE_TYPE_CLAUSES[t]).join(' OR ')})`;
 }
 
+// ─── Classification lists (user-managed Direct/Indirect domains) ───────
+// Single shared Firestore doc 'classification_lists/global'. Future extension
+// point: replace `direct`/`indirect` string arrays with [{value, kind:'email'|'domain'}].
+const DOMAIN_RX = /^[a-z0-9.-]+\.[a-z]{2,}$/;
+let _classCache = { at: 0, data: { direct: [], indirect: [], updated_at: null, updated_by: null } };
+const CLASS_CACHE_TTL_MS = 60 * 1000;
+
+async function loadClassificationLists() {
+  if (!firestoreDb) return { direct: [], indirect: [], updated_at: null, updated_by: null };
+  const now = Date.now();
+  if (now - _classCache.at < CLASS_CACHE_TTL_MS) return _classCache.data;
+  try {
+    const snap = await firestoreDb.collection('classification_lists').doc('global').get();
+    const d = snap.exists ? snap.data() : {};
+    const clean = arr => Array.isArray(arr)
+      ? [...new Set(arr.map(v => String(v || '').trim().toLowerCase()).filter(v => DOMAIN_RX.test(v)))]
+      : [];
+    const data = {
+      direct: clean(d.direct),
+      indirect: clean(d.indirect),
+      updated_at: d.updated_at && d.updated_at.toDate ? d.updated_at.toDate().toISOString() : (d.updated_at || null),
+      updated_by: d.updated_by || null,
+    };
+    _classCache = { at: now, data };
+    return data;
+  } catch (err) {
+    console.error('loadClassificationLists error:', err.message);
+    return _classCache.data;
+  }
+}
+function bustClassificationCache() { _classCache.at = 0; }
+
+function _domainListClause(domains) {
+  if (!domains.length) return 'FALSE';
+  const alt = domains.map(d => d.replace(/\./g, '\\.')).join('|');
+  return `(LOWER(c.recipient_role) = 'from' AND REGEXP_CONTAINS(LOWER(c.recipient_handle), r'@(${alt})$'))`;
+}
+function classificationFilterClause(req, lists) {
+  const keys = String(req.query.classification || '')
+    .split(',')
+    .map(t => t.trim().toLowerCase())
+    .filter(t => t === 'direct' || t === 'indirect');
+  if (!keys.length) return '';
+  const parts = [];
+  if (keys.includes('direct'))   parts.push(_domainListClause(lists.direct));
+  if (keys.includes('indirect')) parts.push(_domainListClause(lists.indirect));
+  return ` AND (${parts.join(' OR ')})`;
+}
+
 async function runQuery(sql, params = {}) {
   const options = { query: sql, params, location: 'US' };
   const [rows] = await bigquery.query(options);
@@ -225,12 +274,55 @@ app.post('/api/team-schedules', async (req, res) => {
   }
 });
 
+// ─── Customer Classification Lists (Direct/Indirect domains) ──────────
+app.get('/api/classification-lists', async (req, res) => {
+  const data = await loadClassificationLists();
+  res.json(data);
+});
+
+app.post('/api/classification-lists', async (req, res) => {
+  if (!firestoreDb) return res.status(503).json({ error: 'Firestore not configured' });
+  try {
+    const norm = arr => Array.isArray(arr)
+      ? arr.map(v => String(v || '').trim().toLowerCase().replace(/^@/, '')).filter(Boolean)
+      : [];
+    const direct = norm(req.body.direct);
+    const indirect = norm(req.body.indirect);
+
+    const invalid = [...direct, ...indirect].filter(v => !DOMAIN_RX.test(v));
+    if (invalid.length) {
+      return res.status(400).json({ error: 'Invalid domain entries', invalid: [...new Set(invalid)] });
+    }
+    const dedupe = a => [...new Set(a)];
+    const directSet = new Set(dedupe(direct));
+    const indirectSet = new Set(dedupe(indirect));
+    const conflicts = [...directSet].filter(v => indirectSet.has(v));
+    if (conflicts.length) {
+      return res.status(409).json({ error: 'Domain appears in both lists', conflicts });
+    }
+    await firestoreDb.collection('classification_lists').doc('global').set({
+      direct: [...directSet],
+      indirect: [...indirectSet],
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_by: (req.user && req.user.email) || null,
+    });
+    bustClassificationCache();
+    const fresh = await loadClassificationLists();
+    res.json({ success: true, ...fresh });
+  } catch (err) {
+    console.error('post-classification-lists error:', err.code, err.message, err.details || '');
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── 1. Dashboard Stats (Conversation Overview + Direction Donuts) ─────
 // Now filtered to Sales Team inbox only
 app.get('/api/dashboard-stats', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       WITH base AS (
         SELECT
@@ -257,7 +349,7 @@ app.get('/api/dashboard-stats', async (req, res) => {
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
         LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
         GROUP BY c.id, c.status, c.status_category, qr_mode
       )
       SELECT
@@ -356,13 +448,15 @@ app.get('/api/conversation-trend', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       WITH convs AS (
         SELECT FORMAT_TIMESTAMP('%Y-%m-%d', c.created_at, '${TZ}') AS day,
                COUNT(*) AS count_conversations
         FROM \`${FRONT}.conversation\` c
         ${SALES_INBOX_FILTER}
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
         GROUP BY 1
       ),
       replies AS (
@@ -402,6 +496,8 @@ app.get('/api/team-performance', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       -- Sales Team inbox conversations (reusable filter for all CTEs)
       WITH sales_convos AS (
@@ -421,7 +517,7 @@ app.get('/api/team-performance', async (req, res) => {
         WHERE LOWER(csh.status) = 'assign'
           AND csh.updated_at >= TIMESTAMP(@start) AND csh.updated_at <= TIMESTAMP(@end)
           AND csh.target_teammate_id IS NOT NULL
-          ${typeClause}
+          ${typeClause} ${classClause}
         GROUP BY csh.conversation_id
       ),
       assigned AS (
@@ -607,6 +703,8 @@ app.get('/api/top-accounts', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       SELECT
         a.name AS account_name,
@@ -620,7 +718,7 @@ app.get('/api/top-accounts', async (req, res) => {
       JOIN \`${FRONT}.message_recipient\` mr ON mr.message_id = m.id
       JOIN \`${FRONT}.contact\` ct ON ct.id = mr.contact_id
       JOIN \`${FRONT}.account\` a ON a.id = ct.account_id
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
         AND a.name IS NOT NULL AND a.name != ''
       GROUP BY a.name
       ORDER BY total DESC
@@ -646,6 +744,8 @@ app.get('/api/management-kpis', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const start = new Date(startStr);
     const end   = new Date(endStr);
     const duration    = end.getTime() - start.getTime();
@@ -668,7 +768,7 @@ app.get('/api/management-kpis', async (req, res) => {
         LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
           AND q.quote_request_number IS NOT NULL
         GROUP BY c.id, q.quote_request_number
       )
@@ -692,7 +792,7 @@ app.get('/api/management-kpis', async (req, res) => {
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
         INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
           AND LOWER(t.name) IN ('contacted','need to quote','quoted','need to requote','need to onboard','pending review')
       )
       SELECT
@@ -724,7 +824,7 @@ app.get('/api/management-kpis', async (req, res) => {
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
         GROUP BY day, qrn
       )
       SELECT day, COUNT(*) AS total, SUM(is_won) AS won, SUM(is_lost) AS lost
@@ -774,6 +874,8 @@ app.get('/api/management-win-rate', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       WITH base AS (
         SELECT
@@ -786,7 +888,7 @@ app.get('/api/management-win-rate', async (req, res) => {
         LEFT JOIN \`${AI}.email_quote_requests\` q ON q.front_conversation_id = c.id
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
           AND q.quote_request_number IS NOT NULL
         GROUP BY 1, 2
       )
@@ -817,6 +919,8 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       WITH per_conv AS (
         SELECT
@@ -842,7 +946,7 @@ app.get('/api/management-freight-breakdown', async (req, res) => {
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
         GROUP BY c.id, direction, qr_mode
       ),
       breakdown AS (
@@ -926,6 +1030,8 @@ app.get('/api/management-no-direction', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       SELECT DISTINCT
         c.id AS conversation_id,
@@ -934,7 +1040,7 @@ app.get('/api/management-no-direction', async (req, res) => {
       ${SALES_INBOX_FILTER}
       INNER JOIN \`${AI}.email_quote_requests\` q
         ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
         AND LOWER(REPLACE(COALESCE(JSON_VALUE(q.quote_data, '$.direction'), ''), '-', ''))
             NOT IN ('import','export','domestic','crosstrade')
       ORDER BY c.id
@@ -952,6 +1058,8 @@ app.get('/api/management-no-qrn-won', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       SELECT DISTINCT c.id AS conversation_id
       FROM \`${FRONT}.conversation\` c
@@ -960,7 +1068,7 @@ app.get('/api/management-no-qrn-won', async (req, res) => {
       INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'won'
       LEFT JOIN \`${AI}.email_quote_requests\` q
         ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
         AND q.quote_request_number IS NULL
       ORDER BY c.id
     `;
@@ -977,6 +1085,8 @@ app.get('/api/management-won-by-month', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       WITH won_qrns AS (
         -- QRN-level won deals: same logic as management-kpis
@@ -990,7 +1100,7 @@ app.get('/api/management-won-by-month', async (req, res) => {
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
         INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'won'
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
         GROUP BY month, qrn, direction
       ),
       no_qrn AS (
@@ -1002,7 +1112,7 @@ app.get('/api/management-won-by-month', async (req, res) => {
         INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'won'
         LEFT JOIN \`${AI}.email_quote_requests\` q
           ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
           AND q.quote_request_number IS NULL
       )
       SELECT month, direction, COUNT(DISTINCT qrn) AS won_count
@@ -1045,6 +1155,8 @@ app.get('/api/management-active-conversations', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       WITH active_convs AS (
         SELECT
@@ -1060,7 +1172,7 @@ app.get('/api/management-active-conversations', async (req, res) => {
         ${SALES_INBOX_FILTER}
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
           AND c.status IN ('assigned','unassigned')
         GROUP BY c.id, c.status
       )
@@ -1108,6 +1220,8 @@ app.get('/api/management-conv-per-owner', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       SELECT
         FORMAT_TIMESTAMP('%Y-%m', c.created_at, '${TZ}') AS month,
@@ -1116,7 +1230,7 @@ app.get('/api/management-conv-per-owner', async (req, res) => {
       FROM \`${FRONT}.conversation\` c
       ${SALES_INBOX_FILTER}
       LEFT JOIN \`${FRONT}.teammate\` tm ON tm.id = c.teammate_id
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
       GROUP BY month, owner
       ORDER BY month, conv_count DESC
     `;
@@ -1148,6 +1262,8 @@ app.get('/api/management-direction-by-month', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const sql = `
       SELECT
         FORMAT_TIMESTAMP('%Y-%m', c.created_at, '${TZ}') AS month,
@@ -1157,7 +1273,7 @@ app.get('/api/management-direction-by-month', async (req, res) => {
       ${SALES_INBOX_FILTER}
       INNER JOIN \`${AI}.email_quote_requests\` q
         ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
-      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
       GROUP BY month, direction
       ORDER BY month, direction
     `;
@@ -1191,6 +1307,8 @@ app.get('/api/management-download', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
     const type = req.query.type || '';
 
     const TYPE_FILTERS = {
@@ -1231,7 +1349,7 @@ app.get('/api/management-download', async (req, res) => {
         LEFT JOIN \`${FRONT}.teammate\` tm ON tm.id = c.teammate_id
         LEFT JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
         LEFT JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id
-        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}
+        WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}
         GROUP BY c.id, c.status, owner
       )
       SELECT
@@ -1340,17 +1458,19 @@ app.get('/api/download-conversations', async (req, res) => {
     const type = req.query.type || 'conversation-trend';
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
 
     let whereClause = '';
     if (type === 'conversation-trend') {
-      whereClause = `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}`;
+      whereClause = `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}`;
     } else if (type === 'team-assignments') {
       whereClause = `WHERE c.id IN (
         SELECT DISTINCT conversation_id
         FROM \`${FRONT}.conversation_status_history\`
         WHERE status = 'assign'
           AND updated_at >= TIMESTAMP(@start) AND updated_at <= TIMESTAMP(@end)
-      ) ${typeClause}`;
+      ) ${typeClause} ${classClause}`;
     } else if (type === 'pending-replies') {
       // Handled separately below via Front.com API — not BigQuery
     }
@@ -1450,11 +1570,11 @@ const STAGE_CASE_SQL = `
 
 // Resolves QRN → stage from BigQuery. Pass null for both dates to get all-time.
 // Returns Map<qrn, stage>.
-async function fetchQrnStages(startStr, endStr, typeClause = '') {
+async function fetchQrnStages(startStr, endStr, typeClause = '', classClause = '') {
   const allTime = !startStr && !endStr;
   const whereClause = allTime
     ? ''
-    : `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}`;
+    : `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}`;
   const sql = `
     WITH qrn_tags AS (
       SELECT
@@ -1619,11 +1739,11 @@ async function fetchPostgresDeals(qrnList) {
 
 // Returns Set<qrn> of QRNs that carry a given lowercase tag in BigQuery,
 // regardless of other tags or precedence resolution.
-async function fetchQrnsWithTag(tagName, startStr, endStr, typeClause = '') {
+async function fetchQrnsWithTag(tagName, startStr, endStr, typeClause = '', classClause = '') {
   const allTime = !startStr && !endStr;
   const whereClause = allTime
     ? ''
-    : `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause}`;
+    : `WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end) ${typeClause} ${classClause}`;
   const sql = `
     SELECT DISTINCT q.quote_request_number AS qrn
     FROM \`${FRONT}.conversation\` c
@@ -1641,8 +1761,8 @@ async function fetchQrnsWithTag(tagName, startStr, endStr, typeClause = '') {
 }
 
 // Combined: BQ stages × Postgres deal data. Only QRNs with both sides present.
-async function getQrnDeals(startStr, endStr, typeClause = '') {
-  const stageMap = await fetchQrnStages(startStr, endStr, typeClause);
+async function getQrnDeals(startStr, endStr, typeClause = '', classClause = '') {
+  const stageMap = await fetchQrnStages(startStr, endStr, typeClause, classClause);
   if (!stageMap.size) return [];
   const pgRows = await fetchPostgresDeals([...stageMap.keys()]);
   return pgRows.map(r => ({ ...r, stage: stageMap.get(r.qrn) || null }));
@@ -1655,7 +1775,9 @@ app.get('/api/revenue-by-company', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
-    const deals = await getQrnDeals(startStr, endStr, typeClause);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const deals = await getQrnDeals(startStr, endStr, typeClause, classClause);
     const booked = deals.filter(d => d.quote_status === 'BOOKED');
 
     const byCompany = new Map();
@@ -1694,7 +1816,9 @@ app.get('/api/need-to-onboard-revenue', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
-    const ntoQrns = await fetchQrnsWithTag('need to onboard', startStr, endStr, typeClause);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const ntoQrns = await fetchQrnsWithTag('need to onboard', startStr, endStr, typeClause, classClause);
     if (!ntoQrns.size) return res.json({ deals: [], total: 0, count: 0 });
     const pgRows = await fetchPostgresDeals([...ntoQrns]);
     const filtered = pgRows
@@ -1719,7 +1843,9 @@ app.get('/api/quoted-potential-revenue', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
-    const quotedQrns = await fetchQrnsWithTag('quoted', startStr, endStr, typeClause);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const quotedQrns = await fetchQrnsWithTag('quoted', startStr, endStr, typeClause, classClause);
     if (!quotedQrns.size) return res.json({ deals: [], total: 0, count: 0 });
     const pgRows = await fetchPostgresDeals([...quotedQrns]);
     const filtered = pgRows
@@ -1739,7 +1865,9 @@ app.get('/api/quote-stages-by-rep', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
-    const stageMap = await fetchQrnStages(startStr, endStr, typeClause);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const stageMap = await fetchQrnStages(startStr, endStr, typeClause, classClause);
     if (!stageMap.size) {
       return res.json({ reps: [], pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
     }
@@ -1783,7 +1911,9 @@ app.get('/api/quote-stages-by-business-type', async (req, res) => {
   try {
     const { startStr, endStr } = dateParams(req);
     const typeClause = typeFilterClause(req);
-    const stageMap = await fetchQrnStages(startStr, endStr, typeClause);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const stageMap = await fetchQrnStages(startStr, endStr, typeClause, classClause);
     if (!stageMap.size) {
       return res.json({ rows: [], pipeline: PIPELINE_STAGES, side: SIDE_STAGES });
     }

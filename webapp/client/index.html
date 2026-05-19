@@ -86,6 +86,9 @@
         <button type="button" data-source="resellers" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Resellers</button>
         <button type="button" data-source="website" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Website</button>
         <button type="button" data-source="other" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Other</button>
+        <span class="mx-1 h-4 w-px bg-slate-200"></span>
+        <button type="button" data-classification="direct" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Direct</button>
+        <button type="button" data-classification="indirect" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Indirect</button>
       </div>
       <!-- Search -->
       <button id="searchToggle" class="size-10 flex items-center justify-center rounded-full bg-primary/5 text-primary" title="Search">
@@ -554,6 +557,39 @@
           <button id="themeDark" class="flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-slate-500 dark:text-white dark:bg-slate-700 dark:shadow-sm font-medium transition-all">
             <span class="material-symbols-outlined text-lg">dark_mode</span><span class="text-sm">Dark</span>
           </button>
+        </div>
+      </div>
+
+      <!-- Customer Classification Lists -->
+      <div class="bg-white dark:bg-slate-900 rounded-xl p-5 shadow-sm border border-slate-100 dark:border-slate-800">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="material-symbols-outlined text-primary dark:text-blue-400">label</span>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white">Customer Classification Lists</h3>
+        </div>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">Domains in <b>Direct</b> and <b>Indirect</b> drive the Direct/Indirect filter on the Pricing and Management dashboards. A domain can only belong to one list.</p>
+
+        <div class="flex p-1 bg-background-light dark:bg-slate-800 rounded-lg mb-4 w-fit">
+          <button id="clsTabDirect" type="button" class="cls-tab px-4 py-1.5 rounded-md text-sm font-medium bg-white dark:bg-transparent shadow-sm text-primary dark:text-slate-200" data-cls-tab="direct">Direct</button>
+          <button id="clsTabIndirect" type="button" class="cls-tab px-4 py-1.5 rounded-md text-sm font-medium text-slate-500 dark:text-white" data-cls-tab="indirect">Indirect</button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <input id="clsAddInput" type="text" placeholder="acme.com" class="flex-1 min-w-[180px] rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+          <button id="clsAddBtn" type="button" class="rounded-md bg-primary text-white px-3 py-2 text-sm font-semibold hover:bg-primary/90">Add</button>
+          <label for="clsCsvInput" class="cursor-pointer rounded-md bg-primary/10 text-primary px-3 py-2 text-sm font-semibold hover:bg-primary/15 inline-flex items-center gap-1">
+            <span class="material-symbols-outlined text-base">upload</span>Upload CSV
+          </label>
+          <input id="clsCsvInput" type="file" accept=".csv,text/csv" class="hidden" />
+        </div>
+
+        <div id="clsChipsEmpty" class="text-xs text-slate-400 italic mb-3 hidden">No domains yet. Add one above or upload a CSV.</div>
+        <div id="clsChips" class="flex flex-wrap gap-2 mb-3 min-h-[2rem]"></div>
+
+        <div id="clsError" class="hidden text-xs text-red-600 dark:text-red-400 mb-3"></div>
+
+        <div class="flex items-center justify-between">
+          <div id="clsMeta" class="text-xs text-slate-400"></div>
+          <button id="clsSaveBtn" type="button" disabled class="rounded-md bg-primary text-white px-4 py-2 text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90">Save Changes</button>
         </div>
       </div>
 

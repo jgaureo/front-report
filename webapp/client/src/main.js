@@ -58,10 +58,13 @@ function getDateRange(preset) {
 
 let currentRange = getDateRange('this-month');
 const selectedSources = new Set();
+const selectedClassifications = new Set();
 const API_BASE_URL = window.location.hostname === 'localhost' ? '' : 'https://front-report.onrender.com';
 const qs = () => {
   const base = `start=${currentRange.start.toISOString()}&end=${currentRange.end.toISOString()}`;
-  return selectedSources.size ? `${base}&source=${[...selectedSources].join(',')}` : base;
+  const src = selectedSources.size ? `&source=${[...selectedSources].join(',')}` : '';
+  const cls = selectedClassifications.size ? `&classification=${[...selectedClassifications].join(',')}` : '';
+  return base + src + cls;
 };
 const api = async (url, opts = {}, _retry) => {
   const headers = { ...(opts.headers || {}) };
@@ -2041,7 +2044,8 @@ document.getElementById('applyCustom').addEventListener('click', () => {
 // ─── Source Capsule Filter ───────────────────────────
 function refreshSourceCapsuleStyles() {
   document.querySelectorAll('.src-cap').forEach(btn => {
-    const active = selectedSources.has(btn.dataset.source);
+    const cls = btn.dataset.classification;
+    const active = cls ? selectedClassifications.has(cls) : selectedSources.has(btn.dataset.source);
     btn.className = `src-cap rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
       active ? 'bg-primary text-white hover:bg-primary/90' : 'bg-primary/5 text-primary hover:bg-primary/10'
     }`;
@@ -2049,13 +2053,191 @@ function refreshSourceCapsuleStyles() {
 }
 document.querySelectorAll('.src-cap').forEach(btn => {
   btn.addEventListener('click', () => {
-    const src = btn.dataset.source;
-    if (selectedSources.has(src)) selectedSources.delete(src);
-    else selectedSources.add(src);
+    const cls = btn.dataset.classification;
+    if (cls) {
+      if (selectedClassifications.has(cls)) selectedClassifications.delete(cls);
+      else selectedClassifications.add(cls);
+    } else {
+      const src = btn.dataset.source;
+      if (selectedSources.has(src)) selectedSources.delete(src);
+      else selectedSources.add(src);
+    }
     refreshSourceCapsuleStyles();
     loadAll();
   });
 });
+
+// ─── Classification Lists (Settings) ─────────────────
+const DOMAIN_RX_CLIENT = /^[a-z0-9.-]+\.[a-z]{2,}$/;
+const clsState = { direct: [], indirect: [], updated_at: null, updated_by: null, activeTab: 'direct', dirty: false, loaded: false };
+
+function normalizeDomain(s) {
+  return String(s || '').trim().toLowerCase().replace(/^@/, '').replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+}
+function clsCurrentList() { return clsState[clsState.activeTab]; }
+function clsOtherList() { return clsState[clsState.activeTab === 'direct' ? 'indirect' : 'direct']; }
+
+function renderClsChips() {
+  const wrap = document.getElementById('clsChips');
+  const empty = document.getElementById('clsChipsEmpty');
+  const meta = document.getElementById('clsMeta');
+  const saveBtn = document.getElementById('clsSaveBtn');
+  if (!wrap) return;
+  const list = clsCurrentList();
+  if (!list.length) { wrap.innerHTML = ''; empty?.classList.remove('hidden'); }
+  else {
+    empty?.classList.add('hidden');
+    wrap.innerHTML = list.map(d => `
+      <span class="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary px-3 py-1 text-xs font-medium">
+        ${d}
+        <button type="button" data-rm="${d}" class="ml-1 text-primary/60 hover:text-primary" aria-label="Remove ${d}">&times;</button>
+      </span>`).join('');
+    wrap.querySelectorAll('button[data-rm]').forEach(b => b.addEventListener('click', () => {
+      const v = b.dataset.rm;
+      const tab = clsState.activeTab;
+      clsState[tab] = clsState[tab].filter(x => x !== v);
+      clsState.dirty = true;
+      renderClsChips();
+    }));
+  }
+  if (meta) {
+    if (clsState.updated_by && clsState.updated_at) {
+      const when = new Date(clsState.updated_at);
+      meta.textContent = `Last updated by ${clsState.updated_by} on ${when.toLocaleString()}`;
+    } else {
+      meta.textContent = '';
+    }
+  }
+  if (saveBtn) saveBtn.disabled = !clsState.dirty;
+}
+
+function setClsTab(tab) {
+  clsState.activeTab = tab;
+  document.querySelectorAll('.cls-tab').forEach(b => {
+    const active = b.dataset.clsTab === tab;
+    b.className = `cls-tab px-4 py-1.5 rounded-md text-sm font-medium ${active ? 'bg-white dark:bg-transparent shadow-sm text-primary dark:text-slate-200' : 'text-slate-500 dark:text-white'}`;
+  });
+  renderClsChips();
+}
+
+function showClsError(msg) {
+  const el = document.getElementById('clsError');
+  if (!el) return;
+  if (!msg) { el.classList.add('hidden'); el.textContent = ''; return; }
+  el.classList.remove('hidden');
+  el.textContent = msg;
+}
+
+function addClsDomain(raw) {
+  showClsError('');
+  const d = normalizeDomain(raw);
+  if (!d) return;
+  if (!DOMAIN_RX_CLIENT.test(d)) { showClsError(`"${raw}" is not a valid domain (expected e.g. acme.com)`); return; }
+  if (clsCurrentList().includes(d)) { showClsError(`"${d}" is already in the ${clsState.activeTab} list`); return; }
+  if (clsOtherList().includes(d)) {
+    const other = clsState.activeTab === 'direct' ? 'Indirect' : 'Direct';
+    showClsError(`"${d}" is already in ${other}. Remove it there first.`);
+    return;
+  }
+  clsState[clsState.activeTab] = [...clsCurrentList(), d];
+  clsState.dirty = true;
+  renderClsChips();
+}
+
+function parseCsvDomains(text) {
+  return text.split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean)
+    .filter(s => s.toLowerCase() !== 'domain')
+    .map(normalizeDomain);
+}
+
+async function loadClsLists() {
+  try {
+    const data = await api(`/api/classification-lists`);
+    clsState.direct = Array.isArray(data.direct) ? data.direct : [];
+    clsState.indirect = Array.isArray(data.indirect) ? data.indirect : [];
+    clsState.updated_at = data.updated_at || null;
+    clsState.updated_by = data.updated_by || null;
+    clsState.dirty = false;
+    clsState.loaded = true;
+    renderClsChips();
+  } catch (err) {
+    console.error('loadClsLists error:', err);
+    showClsError('Failed to load lists.');
+  }
+}
+
+async function saveClsLists() {
+  showClsError('');
+  const saveBtn = document.getElementById('clsSaveBtn');
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/classification-lists`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) },
+      body: JSON.stringify({ direct: clsState.direct, indirect: clsState.indirect }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 409 && body.conflicts) {
+        showClsError(`Conflict — these are in both lists: ${body.conflicts.join(', ')}`);
+      } else if (body.invalid) {
+        showClsError(`Invalid entries: ${body.invalid.join(', ')}`);
+      } else {
+        showClsError(body.error || `Save failed (${res.status})`);
+      }
+      if (saveBtn) saveBtn.disabled = false;
+      return;
+    }
+    clsState.direct = body.direct || clsState.direct;
+    clsState.indirect = body.indirect || clsState.indirect;
+    clsState.updated_at = body.updated_at || null;
+    clsState.updated_by = body.updated_by || null;
+    clsState.dirty = false;
+    renderClsChips();
+    if (typeof loadAll === 'function') loadAll();
+  } catch (err) {
+    console.error('saveClsLists error:', err);
+    showClsError('Save failed — see console.');
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+function initClassificationSettings() {
+  document.querySelectorAll('.cls-tab').forEach(b => b.addEventListener('click', () => setClsTab(b.dataset.clsTab)));
+  document.getElementById('clsAddBtn')?.addEventListener('click', () => {
+    const inp = document.getElementById('clsAddInput');
+    if (!inp) return;
+    addClsDomain(inp.value);
+    if (!document.getElementById('clsError').textContent) inp.value = '';
+  });
+  document.getElementById('clsAddInput')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('clsAddBtn').click(); }
+  });
+  document.getElementById('clsCsvInput')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    const parsed = parseCsvDomains(text);
+    const bad = parsed.filter(d => !DOMAIN_RX_CLIENT.test(d));
+    if (bad.length) showClsError(`Skipped ${bad.length} invalid entr${bad.length === 1 ? 'y' : 'ies'}: ${bad.slice(0, 5).join(', ')}${bad.length > 5 ? '…' : ''}`);
+    const good = parsed.filter(d => DOMAIN_RX_CLIENT.test(d));
+    const conflicts = good.filter(d => clsOtherList().includes(d));
+    if (conflicts.length) {
+      const other = clsState.activeTab === 'direct' ? 'Indirect' : 'Direct';
+      showClsError(`Skipped ${conflicts.length} already in ${other}: ${conflicts.slice(0, 5).join(', ')}${conflicts.length > 5 ? '…' : ''}`);
+    }
+    const toAdd = good.filter(d => !clsCurrentList().includes(d) && !clsOtherList().includes(d));
+    if (toAdd.length) {
+      clsState[clsState.activeTab] = [...clsCurrentList(), ...toAdd];
+      clsState.dirty = true;
+      renderClsChips();
+    }
+    e.target.value = '';
+  });
+  document.getElementById('clsSaveBtn')?.addEventListener('click', saveClsLists);
+  setClsTab('direct');
+}
+initClassificationSettings();
 
 // ─── Team Performance Sort ───────────────────────────
 document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -2264,6 +2446,7 @@ auth.onAuthStateChanged(async (user) => {
     loginOverlay.style.display = 'none';
     navigateTo('pricing-dashboard');
     loadAll();
+    loadClsLists();
   } else {
     currentUser = null;
     idToken = null;
