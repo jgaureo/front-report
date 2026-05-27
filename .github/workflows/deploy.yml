@@ -4,6 +4,13 @@ on:
   push:
     branches: [ main ]
 
+# Prevent overlapping deploys from racing on the gh-pages branch.
+# cancel-in-progress: false → if a run is mid-deploy, queue the next one
+# instead of killing it (avoids leaving gh-pages half-pushed).
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -24,3 +31,8 @@ jobs:
         with:
           folder: webapp/client/dist
           branch: gh-pages
+          # Rewrite gh-pages with a single commit each run — avoids
+          # accumulated history conflicting with GitHub's auto-build
+          # workflow that follows every gh-pages push.
+          single-commit: true
+          force: true
