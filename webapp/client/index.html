@@ -82,11 +82,14 @@
     <div class="flex items-center gap-2">
       <!-- Source capsule filter (Dashboard only) -->
       <div id="sourceFilter" class="flex items-center gap-1">
-        <button type="button" data-source="marketplace" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Marketplace</button>
-        <button type="button" data-source="resellers" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Resellers</button>
-        <button type="button" data-source="website" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Website</button>
-        <button type="button" data-source="other" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Other</button>
-        <span class="mx-1 h-4 w-px bg-slate-200"></span>
+        <!-- Hidden for now (kept for future use) -->
+        <span class="hidden items-center gap-1">
+          <button type="button" data-source="marketplace" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Marketplace</button>
+          <button type="button" data-source="resellers" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Resellers</button>
+          <button type="button" data-source="website" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Website</button>
+          <button type="button" data-source="other" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Other</button>
+          <span class="mx-1 h-4 w-px bg-slate-200"></span>
+        </span>
         <button type="button" data-classification="direct" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Direct</button>
         <button type="button" data-classification="indirect" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Indirect</button>
       </div>
