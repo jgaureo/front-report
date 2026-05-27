@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+  <title>FreightRight — Dashboard</title>
+  <link rel="icon" href="./assets/favicon-DSbVRXKI.png" />
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "primary": "#1e3063",
+            "accent-green": "#73be4b",
+            "background-light": "#f6f6f8",
+            "background-dark": "#14161e",
+            "sea-fcl": "#5B86AD",
+            "sea-lcl": "#588B8B",
+            "air-lcl": "#D1A677",
+            "road-ltl": "#FB923C",
+            "road-ftl": "#1e3063",
+            "chart-pink": "#FF4081",
+          },
+          fontFamily: {
+            "display": ["Manrope"]
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    body { font-family: 'Manrope', sans-serif; min-height: max(884px, 100dvh); }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .page { display: none; }
+    .page.active { display: block; }
+    /* Tooltip for column headers */
+    .col-tip { position: relative; cursor: help; }
+    .col-tip .tip-content {
+      display: none; position: absolute; z-index: 50; top: 100%; left: 50%; transform: translateX(-50%);
+      background: #1e293b; color: #fff; padding: 10px 14px; border-radius: 8px; font-size: 11px;
+      font-weight: 400; line-height: 1.5; max-width: 240px; width: max-content; white-space: normal;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25); margin-top: 4px; text-transform: none; letter-spacing: 0;
+    }
+    .col-tip .tip-content .tip-title { font-weight: 700; font-size: 12px; margin-bottom: 2px; }
+    .col-tip:hover .tip-content { display: block; }
+  </style>
+  <script type="module" crossorigin src="./assets/index-D5pkEgt1.js"></script>
+</head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display min-h-screen pb-48">
+
+  <!-- ═══════ LOGIN OVERLAY ═══════ -->
+  <div id="loginOverlay" class="fixed inset-0 z-[70] bg-background-light flex items-center justify-center">
+    <div class="flex flex-col items-center gap-6 px-8">
+      <img src="./assets/logo-BTlZmG6B.png" alt="Freight Right" class="h-12" />
+      <p class="text-sm text-slate-500 text-center">Sign in with your <strong>@freightright.com</strong> account</p>
+      <button id="googleSignInBtn" class="flex items-center gap-3 px-6 py-3 bg-white border border-slate-200 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+        <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.49h4.84a4.14 4.14 0 0 1-1.8 2.71v2.26h2.92a8.78 8.78 0 0 0 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.83.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A8.99 8.99 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.97 10.71A5.41 5.41 0 0 1 3.69 9c0-.59.1-1.17.28-1.71V4.96H.96A8.99 8.99 0 0 0 0 9c0 1.45.35 2.82.96 4.04l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A8.99 8.99 0 0 0 .96 4.96l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/></svg>
+        <span class="text-sm font-semibold text-slate-700">Sign in with Google</span>
+      </button>
+      <div id="loginError" class="hidden text-xs text-red-500 text-center max-w-xs"></div>
+      <div id="loginSpinner" class="hidden">
+        <div class="size-6 border-2 border-primary/20 border-t-primary rounded-full animate-spin"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ HEADER ═══════ -->
+  <header class="sticky top-0 z-50 bg-background-light/80 backdrop-blur-md border-b border-primary/10 px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <img src="./assets/logo-BTlZmG6B.png" alt="Freight Right" class="h-8" />
+    </div>
+    <div class="flex items-center gap-2">
+      <!-- Source capsule filter (Dashboard only) -->
+      <div id="sourceFilter" class="flex items-center gap-1">
+        <!-- Hidden for now (kept for future use) -->
+        <span style="display:none !important">
+          <button type="button" data-source="marketplace" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Marketplace</button>
+          <button type="button" data-source="resellers" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Resellers</button>
+          <button type="button" data-source="website" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Website</button>
+          <button type="button" data-source="other" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Other</button>
+          <span class="mx-1 h-4 w-px bg-slate-200"></span>
+        </span>
+        <button type="button" data-classification="direct" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Direct</button>
+        <button type="button" data-classification="indirect" class="src-cap rounded-full px-3 py-1.5 text-xs font-semibold bg-primary/5 text-primary hover:bg-primary/10 transition-colors">Indirect</button>
+      </div>
+      <!-- Search -->
+      <button id="searchToggle" class="size-10 flex items-center justify-center rounded-full bg-primary/5 text-primary" title="Search">
+        <span class="material-symbols-outlined">search</span>
+      </button>
+      <!-- Date Preset (Dashboard only) -->
+      <select id="datePreset" class="text-xs font-semibold text-primary bg-primary/5 border-none rounded-full px-3 py-1.5 focus:ring-primary/30 cursor-pointer min-w-[130px]">
+        <option value="today">Today</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="this-week">This week</option>
+        <option value="this-month" selected>This month</option>
+        <option value="this-quarter">This quarter</option>
+        <option value="last-7">Last 7 days</option>
+        <option value="last-week">Last week</option>
+        <option value="last-month">Last month</option>
+        <option value="last-quarter">Last quarter</option>
+        <option value="last-year">Last year</option>
+        <option value="ytd">Year to date</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <button id="authBtn" class="size-10 flex items-center justify-center rounded-full bg-primary/5 text-primary overflow-hidden" title="Sign in">
+        <span class="material-symbols-outlined" id="authIcon">login</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Custom date range (hidden by default) -->
+  <div id="customRange" class="hidden px-4 py-2 bg-white border-b border-slate-100 flex items-center gap-2 flex-wrap">
+    <input type="date" id="customStart" class="text-xs border border-slate-200 rounded-lg px-2 py-1" />
+    <span class="text-xs text-slate-400">to</span>
+    <input type="date" id="customEnd" class="text-xs border border-slate-200 rounded-lg px-2 py-1" />
+    <button id="applyCustom" class="text-xs font-bold text-white bg-accent-green px-3 py-1 rounded-lg">Apply</button>
+  </div>
+
+  <!-- ═══════ PAGE: PRICING DASHBOARD ═══════ -->
+  <main id="page-pricing-dashboard" class="page active p-4 space-y-6">
+
+    <!-- KPI Cards -->
+    <div class="grid grid-cols-2 gap-3" id="kpiCards">
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Total Open</p>
+        <div class="flex items-end justify-between mt-1">
+          <p class="text-3xl font-bold text-primary" id="kpi-open">—</p>
+        </div>
+      </div>
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Waiting</p>
+        <div class="flex items-end justify-between mt-1">
+          <p class="text-3xl font-bold text-primary" id="kpi-waiting">—</p>
+        </div>
+      </div>
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Resolved</p>
+        <div class="flex items-end justify-between mt-1">
+          <p class="text-3xl font-bold text-primary" id="kpi-resolved">—</p>
+        </div>
+      </div>
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <p class="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Archived</p>
+        <div class="flex items-end justify-between mt-1">
+          <p class="text-3xl font-bold text-primary" id="kpi-archived">—</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Conversation Trend -->
+    <section class="space-y-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-primary">Conversation Trend</h2>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase" data-type="conversation-trend" data-filename="conversation-trend.csv">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 p-4 relative">
+        <div class="flex gap-4 mb-3">
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-sea-fcl"></div><span class="text-[10px] font-semibold text-slate-500">Conversations</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-chart-pink"></div><span class="text-[10px] font-semibold text-slate-500">Replies</span></div>
+        </div>
+        <svg id="trendChart" class="w-full" height="200" preserveAspectRatio="xMidYMid meet"></svg>
+        <div id="trendTooltip" class="hidden absolute bg-slate-800 text-white text-[11px] px-3 py-2 rounded-lg pointer-events-none z-10 shadow-lg"></div>
+      </div>
+    </section>
+
+    <!-- Shipment Modes -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-primary">Shipment Modes</h2>
+      </div>
+      <div class="flex flex-wrap gap-x-4 gap-y-2 pb-1">
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-sea-fcl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Ocean FCL</span></div>
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-sea-lcl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Ocean LCL</span></div>
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-air-lcl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Air LCL</span></div>
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-road-ltl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Road LTL</span></div>
+        <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-road-ftl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Road FTL</span></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3" id="donutGrid"></div>
+    </section>
+
+    <!-- Top 5 Accounts -->
+    <section class="space-y-4">
+      <h2 class="text-lg font-bold text-primary">Top 5 Accounts</h2>
+      <div class="bg-white dark:bg-background-dark/50 p-5 rounded-xl shadow-sm border border-primary/5">
+        <div id="topAccounts" class="space-y-4">
+          <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+        </div>
+        <!-- Status Legend -->
+        <div class="flex flex-wrap gap-3 mt-4 pt-3 border-t border-slate-100">
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded bg-sea-fcl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Open</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded bg-road-ltl"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Waiting</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded bg-accent-green"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Resolved</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded bg-slate-400"></div><span class="text-[9px] font-bold text-slate-500 uppercase">Archived</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Performance -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-primary">Team Performance</h2>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase" data-type="team-assignments" data-filename="team-assignments.csv">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="overflow-x-auto no-scrollbar -mx-4 px-4">
+        <div class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden inline-block min-w-full">
+          <table class="min-w-full divide-y divide-slate-100">
+            <thead class="bg-slate-50/50">
+              <tr>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap cursor-pointer hover:text-primary transition-colors" data-sort="name">Teammate <span class="sort-arrow"></span></th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="assigned_conversations">
+                  Assigned <span class="sort-arrow">↓</span>
+                  <div class="tip-content"><div class="tip-title">Assigned in period</div>Sales-inbox conversations whose <b>latest</b> assignment event falls within the selected date range, counted against the teammate who received that final assignment. If a conversation was reassigned multiple times in the window, only the last assignee counts.</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="touched_conversations">
+                  Touched <span class="sort-arrow"></span>
+                  <div class="tip-content"><div class="tip-title">Touched conversations</div>Conversations with an action taken by this teammate (applied a tag, sent a message, commented, etc).</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="messages_sent">
+                  Messages <span class="sort-arrow"></span>
+                  <div class="tip-content"><div class="tip-title">Messages sent</div>Total number of outbound messages sent during the time period.</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest col-tip cursor-pointer hover:text-primary transition-colors" data-sort="replies_sent">
+                  Replies <span class="sort-arrow"></span>
+                  <div class="tip-content"><div class="tip-title">Replies sent</div>Outbound messages sent by your teammates in reply to an inbound message.</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap col-tip cursor-pointer hover:text-primary transition-colors" data-sort="avg_reply_minutes">
+                  Avg Reply <span class="sort-arrow"></span>
+                  <div class="tip-content"><div class="tip-title">Reply time (avg)</div>Time between receiving an inbound message and sending an outbound reply in a given conversation segment. Takes business hours and shifts into consideration.</div>
+                </th>
+                <th class="px-3 py-3 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap col-tip cursor-pointer hover:text-primary transition-colors" data-sort="avg_first_reply_minutes">
+                  Avg 1st Reply <span class="sort-arrow"></span>
+                  <div class="tip-content"><div class="tip-title">First reply time (avg)</div>Time between receiving the first inbound message and sending the first outbound reply in a given conversation segment. Takes business hours and shifts into consideration.</div>
+                </th>
+              </tr>
+            </thead>
+            <tbody id="teamBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pending Replies -->
+    <section class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg font-bold text-primary">Pending Replies</h2>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-bold text-slate-400 uppercase" data-type="pending-replies" data-filename="pending-replies.csv">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="overflow-x-auto no-scrollbar -mx-4 px-4">
+        <div class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden inline-block min-w-full">
+          <table class="min-w-full divide-y divide-slate-100">
+            <thead class="bg-slate-50/50">
+              <tr>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Teammate</th>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Age</th>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Subject</th>
+                <th class="px-4 py-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">Conversation ID</th>
+              </tr>
+            </thead>
+            <tbody id="pendingBody" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ═══════ PAGE: MANAGEMENT DASHBOARD ═══════ -->
+  <main id="page-management-dashboard" class="page p-4 space-y-6">
+
+    <!-- Sub-tab toggle: Current Pipeline | Aging Pipeline -->
+    <div class="flex gap-2" id="mgmtSubTabs">
+      <button class="mgmt-sub-tab px-4 py-2 text-sm font-bold rounded-lg border border-primary/10 bg-primary text-white" data-sub-page="current-pipeline">Current Pipeline</button>
+      <button class="mgmt-sub-tab px-4 py-2 text-sm font-bold rounded-lg border border-primary/10 bg-white text-slate-500 hover:text-primary" data-sub-page="aging-pipeline">Aging Pipeline</button>
+    </div>
+
+    <!-- ─── CURRENT PIPELINE ─────────────────────────────── -->
+    <div id="current-pipeline-content" class="space-y-6">
+
+    <!-- KPI Cards (populated by renderManagementKPIs) -->
+    <div class="grid grid-cols-2 md:grid-cols-5 gap-3" id="mgmtKpiCards">
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5 col-span-2 md:col-span-5 text-xs text-slate-400 text-center py-6">Loading…</div>
+    </div>
+
+    <!-- QRN-Blank tiles (second KPI row) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="mgmtQrnTiles">
+      <!-- Tile 1: Blank QRN — Assumed Spam -->
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <div class="flex items-center gap-1.5 mb-1">
+          <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Blank QRN — Assumed Spam</h3>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="blank-qrn-spam" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+        </div>
+        <div id="qrnBlankSpam" class="text-3xl font-extrabold text-primary">–</div>
+        <div class="text-[10px] text-slate-400 mt-1">Conversations with no QRN ever assigned and not Resolved</div>
+      </div>
+      <!-- Tile 2: Blank QRN — Resolved -->
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <div class="flex items-center gap-1.5 mb-1">
+          <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Blank QRN — Resolved</h3>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="blank-qrn-resolved" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+        </div>
+        <div id="qrnBlankResolved" class="text-3xl font-extrabold text-primary">–</div>
+        <div class="text-[10px] text-slate-400 mt-1">Conversations with no QRN ever assigned that were marked Resolved</div>
+      </div>
+    </div>
+
+    <!-- Win Rate Chart -->
+    <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <div class="flex items-center gap-1.5">
+          <h2 class="text-sm font-bold text-primary">Win Rate Trend</h2>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="win-rate-trend" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+        </div>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="management-win-rate">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center gap-4 mb-3">
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-[#73be4b]"></div><span class="text-[10px] font-semibold text-slate-500">Won</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full bg-red-400"></div><span class="text-[10px] font-semibold text-slate-500">Lost</span></div>
+        </div>
+        <div class="relative">
+          <svg id="winRateChart" class="w-full" style="height:200px" preserveAspectRatio="none"></svg>
+          <div id="winRateTooltip" class="hidden absolute pointer-events-none z-10 bg-slate-800/95 text-white text-[11px] rounded-lg px-3 py-2 shadow-lg leading-relaxed"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Won Deals by Month -->
+    <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <div class="flex items-center gap-1.5">
+          <h2 class="text-sm font-bold text-primary">Won Conversation by Direction</h2>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="won-by-direction" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+        </div>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="management-won-by-month">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center gap-4 mb-3 flex-wrap">
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#f59e0b"></div><span class="text-[10px] font-semibold text-slate-500">Total (line)</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#1e3063"></div><span class="text-[10px] font-semibold text-slate-500">Domestic</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#5B86AD"></div><span class="text-[10px] font-semibold text-slate-500">Import</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#73be4b"></div><span class="text-[10px] font-semibold text-slate-500">Export</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#f87171"></div><span class="text-[10px] font-semibold text-slate-500">Cross-Trade</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#9CA3AF"></div><span class="text-[10px] font-semibold text-slate-500">Other</span></div>
+        </div>
+        <div class="relative">
+          <svg id="wonByMonthChart" class="w-full" style="height:240px" preserveAspectRatio="none"></svg>
+          <div id="wonByMonthTooltip" class="hidden absolute pointer-events-none z-10 bg-slate-800/95 text-white text-[11px] rounded-lg px-3 py-2 shadow-lg leading-relaxed"></div>
+        </div>
+        <div id="wonByMonthNote"></div>
+      </div>
+    </section>
+
+    <!-- Freight Breakdown -->
+    <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <div class="flex items-center gap-1.5">
+          <h2 class="text-sm font-bold text-primary">Freight Breakdown</h2>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="freight-breakdown" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+        </div>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="management-freight-breakdown">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="p-4" id="freightBreakdown">
+        <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+      </div>
+    </section>
+
+    <!-- Direction by Month -->
+    <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <div class="flex items-center gap-1.5">
+          <h2 class="text-sm font-bold text-primary">Number of Requests by Direction (MoM)</h2>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="requests-by-direction" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+        </div>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="management-direction-by-month">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="p-4">
+        <div class="flex items-center gap-4 mb-3 flex-wrap">
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#f59e0b"></div><span class="text-[10px] font-semibold text-slate-500">Total (line)</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#1e3063"></div><span class="text-[10px] font-semibold text-slate-500">Domestic</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#5B86AD"></div><span class="text-[10px] font-semibold text-slate-500">Import</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#73be4b"></div><span class="text-[10px] font-semibold text-slate-500">Export</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#f87171"></div><span class="text-[10px] font-semibold text-slate-500">Cross-Trade</span></div>
+          <div class="flex items-center gap-1.5"><div class="size-2.5 rounded-full" style="background:#9CA3AF"></div><span class="text-[10px] font-semibold text-slate-500">Other</span></div>
+        </div>
+        <div class="relative">
+          <svg id="dirByMonthChart" class="w-full" style="height:240px" preserveAspectRatio="none"></svg>
+          <div id="dirByMonthTooltip" class="hidden absolute pointer-events-none z-10 bg-slate-800/95 text-white text-[11px] rounded-lg px-3 py-2 shadow-lg leading-relaxed"></div>
+        </div>
+        <div id="dirByMonthTable" class="mt-3"></div>
+      </div>
+    </section>
+
+    <!-- Active Conversations + Conv Per Owner (side by side) -->
+    <div class="grid grid-cols-3 gap-3">
+
+      <!-- Active Conversations -->
+      <section class="col-span-1 bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div class="flex items-center gap-1.5">
+            <h2 class="text-sm font-bold text-primary">Active Conversations</h2>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="active-conversations" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+          </div>
+          <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="management-active-conversations">
+            <span class="material-symbols-outlined text-sm">download</span>CSV
+          </button>
+        </div>
+        <div class="p-4" id="activeConversations">
+          <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+        </div>
+      </section>
+
+      <!-- Number of Conversations Per Owner -->
+      <section class="col-span-2 bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div class="flex items-center gap-1.5">
+            <h2 class="text-sm font-bold text-primary">Number of Conversations Per Owner</h2>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="conv-per-owner" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+          </div>
+          <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="management-conv-per-owner">
+            <span class="material-symbols-outlined text-sm">download</span>CSV
+          </button>
+        </div>
+        <div class="p-4">
+          <div class="relative">
+            <svg id="convPerOwnerChart" class="w-full" style="height:240px" preserveAspectRatio="none"></svg>
+            <div id="convPerOwnerTooltip" class="hidden absolute pointer-events-none z-10 bg-slate-800/95 text-white text-[11px] rounded-lg px-3 py-2 shadow-lg leading-relaxed"></div>
+          </div>
+          <div id="convPerOwnerLegend" class="flex flex-wrap gap-x-3 gap-y-1.5 mt-3"></div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Revenue by Company (Top 10) -->
+    <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <div class="flex items-center gap-1.5">
+          <h2 class="text-sm font-bold text-primary">Revenue by Company (Top 10)</h2>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="revenue-by-company" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+        </div>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="revenue-by-company">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="p-4" id="revenueByCompany">
+        <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+      </div>
+    </section>
+
+    <!-- Need to Onboard + Quoted Potential (side by side) -->
+    <div class="grid grid-cols-2 gap-3">
+
+      <!-- Need to Onboard Revenue -->
+      <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div class="flex items-center gap-1.5">
+            <h2 class="text-sm font-bold text-primary">Need to Onboard Revenue</h2>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="need-to-onboard-revenue" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+          </div>
+          <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="need-to-onboard-revenue">
+            <span class="material-symbols-outlined text-sm">download</span>CSV
+          </button>
+        </div>
+        <div class="p-4" id="needToOnboardRevenue">
+          <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+        </div>
+      </section>
+
+      <!-- Quoted Potential Revenue -->
+      <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div class="flex items-center gap-1.5">
+            <h2 class="text-sm font-bold text-primary">Quoted Potential Revenue</h2>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="quoted-potential-revenue" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+          </div>
+          <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="quoted-potential-revenue">
+            <span class="material-symbols-outlined text-sm">download</span>CSV
+          </button>
+        </div>
+        <div class="p-4" id="quotedPotentialRevenue">
+          <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Quote Stages by Rep (all-time) -->
+    <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <div class="flex items-center gap-1.5">
+          <h2 class="text-sm font-bold text-primary">Quote Stages by Rep</h2>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="quote-stages-by-rep" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+        </div>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="quote-stages-by-rep">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="p-4" id="quoteStagesByRep">
+        <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+      </div>
+    </section>
+
+    <!-- Quote Stages by New vs Returning Business (all-time) -->
+    <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+        <div class="flex items-center gap-1.5">
+          <h2 class="text-sm font-bold text-primary">Quote Stages by New vs Returning Business</h2>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="quote-stages-by-business-type" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+        </div>
+        <button class="dl-btn flex items-center gap-1 text-[10px] font-semibold text-slate-500 hover:text-primary transition-colors" data-type="quote-stages-by-business-type">
+          <span class="material-symbols-outlined text-sm">download</span>CSV
+        </button>
+      </div>
+      <div class="p-4" id="quoteStagesByBusinessType">
+        <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+      </div>
+    </section>
+
+    </div><!-- /current-pipeline-content -->
+
+    <!-- ─── AGING PIPELINE ───────────────────────────────── -->
+    <div id="aging-pipeline-content" class="space-y-6 hidden">
+
+      <!-- Row 1: Open conversation age threshold tiles -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="agingOpenTiles">
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Open &gt; 3 days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-3" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingOpen3" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open conversations older than 3 days</div>
+        </div>
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Open &gt; 7 days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-7" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingOpen7" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open conversations older than 7 days</div>
+        </div>
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Open &gt; 14 days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-14" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingOpen14" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open conversations older than 14 days</div>
+        </div>
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Open &gt; 30 days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-30" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingOpen30" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open conversations older than 30 days</div>
+        </div>
+      </div>
+
+      <!-- Row 2: Open Conversations by Age (bar chart) -->
+      <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div class="flex items-center gap-1.5">
+            <h2 class="text-sm font-bold text-primary">Open Conversations by Age</h2>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-buckets" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+          </div>
+        </div>
+        <div class="p-4" id="agingOpenBuckets">
+          <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+        </div>
+      </section>
+
+      <!-- Row 3: Follow-up tiles -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Quoted — No Follow-up 3+ days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-no-followup" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingQuotedNoFollowup" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open quoted deals where the last outbound message is 3 or more days old</div>
+        </div>
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Quoted — No Customer Response 7+ days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-no-response" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingQuotedNoResponse" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open quoted deals where the last inbound message is 7 or more days old</div>
+        </div>
+      </div>
+
+      <!-- Row 4: Open Quoted Value by Age (bar chart) -->
+      <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div class="flex items-center gap-1.5">
+            <h2 class="text-sm font-bold text-primary">Open Quoted Value by Age</h2>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-quoted-value" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+          </div>
+        </div>
+        <div class="p-4" id="agingQuotedValue">
+          <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+        </div>
+      </section>
+
+    </div><!-- /aging-pipeline-content -->
+
+  </main>
+
+  <!-- ═══════ PAGE: TEAMS ═══════ -->
+  <main id="page-teams" class="page flex-1 overflow-y-auto px-4 pb-24">
+    <div class="flex items-end justify-between py-4">
+      <div>
+        <h2 class="text-xl font-extrabold text-slate-900 dark:text-slate-100">Team Directory</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Performance for the selected period</p>
+      </div>
+      <span id="teamCount" class="text-[11px] font-semibold text-slate-400 tabular-nums"></span>
+    </div>
+    <div id="teamDirectory" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      <div class="col-span-full p-6 text-center text-xs text-slate-400">Loading…</div>
+    </div>
+  </main>
+
+  <!-- ═══════ PAGE: SETTINGS ═══════ -->
+  <main id="page-settings" class="page flex-1 overflow-y-auto px-4 pb-24">
+    <div class="py-4">
+      <h2 class="text-xl font-extrabold text-slate-900 dark:text-slate-100">Settings</h2>
+      <p class="text-xs text-slate-500 mt-0.5">Account, appearance, and filters.</p>
+    </div>
+
+    <!-- Profile (compact bar) -->
+    <div class="mb-4 flex items-center gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-100 dark:border-slate-800">
+      <div id="settingsAvatar" class="size-10 shrink-0 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center">
+        <span class="material-symbols-outlined text-primary text-lg">person</span>
+      </div>
+      <div class="min-w-0 flex-1">
+        <p id="settingsName" class="text-sm font-bold text-slate-900 dark:text-white truncate leading-tight">Not signed in</p>
+        <p id="settingsEmail" class="text-[11px] text-slate-500 dark:text-slate-400 truncate">Sign in with Google</p>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <!-- Display Preferences -->
+      <div class="bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm border border-slate-100 dark:border-slate-800">
+        <div class="flex items-center gap-2 mb-3">
+          <span class="material-symbols-outlined text-primary dark:text-blue-400 text-base">palette</span>
+          <h3 class="text-sm font-bold text-slate-900 dark:text-white">Display</h3>
+        </div>
+        <div class="flex p-1 bg-background-light dark:bg-slate-800 rounded-lg">
+          <button id="themeLight" class="flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-md bg-white dark:bg-transparent shadow-sm text-primary dark:text-slate-400 font-medium transition-all">
+            <span class="material-symbols-outlined text-base">light_mode</span><span class="text-xs">Light</span>
+          </button>
+          <button id="themeDark" class="flex-1 flex items-center justify-center gap-2 py-1.5 px-3 rounded-md text-slate-500 dark:text-white dark:bg-slate-700 dark:shadow-sm font-medium transition-all">
+            <span class="material-symbols-outlined text-base">dark_mode</span><span class="text-xs">Dark</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Account -->
+      <div class="bg-white dark:bg-slate-900 rounded-xl overflow-hidden shadow-sm border border-slate-100 dark:border-slate-800">
+        <div class="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
+          <span class="material-symbols-outlined text-primary dark:text-blue-400 text-base">tune</span>
+          <h3 class="text-sm font-bold text-slate-900 dark:text-white">Account</h3>
+        </div>
+        <ul class="divide-y divide-slate-100 dark:divide-slate-800">
+          <li class="flex items-center gap-3 px-4 py-2.5">
+            <span class="material-symbols-outlined text-slate-400 text-base">notifications</span>
+            <span class="flex-1 text-xs font-medium">Notifications</span>
+            <span class="material-symbols-outlined text-slate-300 text-base">chevron_right</span>
+          </li>
+          <li class="flex items-center gap-3 px-4 py-2.5">
+            <span class="material-symbols-outlined text-slate-400 text-base">security</span>
+            <span class="flex-1 text-xs font-medium">Security</span>
+            <span class="material-symbols-outlined text-slate-300 text-base">chevron_right</span>
+          </li>
+          <li class="flex items-center gap-3 px-4 py-2.5">
+            <span class="material-symbols-outlined text-slate-400 text-base">language</span>
+            <span class="flex-1 text-xs font-medium">Language</span>
+            <div class="flex items-center gap-1">
+              <span class="text-[11px] text-slate-400">English</span>
+              <span class="material-symbols-outlined text-slate-300 text-base">chevron_right</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Customer Classification Lists (full width) -->
+      <div class="lg:col-span-2 bg-white dark:bg-slate-900 rounded-xl p-4 shadow-sm border border-slate-100 dark:border-slate-800">
+        <div class="flex items-start justify-between gap-3 mb-3">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary dark:text-blue-400 text-base">label</span>
+              <h3 class="text-sm font-bold text-slate-900 dark:text-white">Customer Classification</h3>
+            </div>
+            <p class="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">Domains drive the <b>Direct</b>/<b>Indirect</b> filter on Pricing and Management. A domain can only belong to one list.</p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button id="clsClearBtn" type="button" disabled class="rounded-md bg-white text-red-600 border border-red-200 px-3 py-1.5 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-red-50">Clear</button>
+            <button id="clsSaveBtn" type="button" disabled class="rounded-md bg-primary text-white px-3 py-1.5 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-primary/90">Save</button>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <div class="flex p-0.5 bg-background-light dark:bg-slate-800 rounded-lg">
+            <button id="clsTabDirect" type="button" class="cls-tab inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium bg-white dark:bg-transparent shadow-sm text-primary dark:text-slate-200" data-cls-tab="direct">Direct <span data-cls-count="direct" class="text-[10px] text-slate-400 font-semibold tabular-nums">0</span></button>
+            <button id="clsTabIndirect" type="button" class="cls-tab inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium text-slate-500 dark:text-white" data-cls-tab="indirect">Indirect <span data-cls-count="indirect" class="text-[10px] text-slate-400 font-semibold tabular-nums">0</span></button>
+          </div>
+          <div class="flex-1 min-w-[200px] flex items-center gap-2">
+            <input id="clsAddInput" type="text" placeholder="acme.com" class="flex-1 min-w-[120px] rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30" />
+            <button id="clsAddBtn" type="button" class="rounded-md bg-primary/10 text-primary px-2.5 py-1.5 text-xs font-semibold hover:bg-primary/15">Add</button>
+            <label for="clsCsvInput" class="cursor-pointer rounded-md bg-primary/10 text-primary px-2.5 py-1.5 text-xs font-semibold hover:bg-primary/15 inline-flex items-center gap-1">
+              <span class="material-symbols-outlined text-sm">upload</span>CSV
+            </label>
+            <input id="clsCsvInput" type="file" accept=".csv,text/csv" class="hidden" />
+          </div>
+        </div>
+
+        <div id="clsChipsEmpty" class="text-[11px] text-slate-400 italic mb-2 hidden">No domains yet. Add one above or upload a CSV.</div>
+        <div id="clsChips" class="flex flex-wrap gap-1.5 mb-2 min-h-[1.75rem]"></div>
+        <div id="clsError" class="hidden text-[11px] text-red-600 dark:text-red-400 mb-2"></div>
+        <div id="clsMeta" class="text-[11px] text-slate-400"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ═══════ SEARCH MODAL ═══════ -->
+  <div id="searchModal" class="fixed inset-0 z-[65] bg-background-light hidden flex-col">
+    <!-- Search header -->
+    <div class="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center gap-3">
+      <button id="searchBack" class="size-10 flex items-center justify-center rounded-full hover:bg-slate-100 text-slate-500">
+        <span class="material-symbols-outlined">arrow_back</span>
+      </button>
+      <div class="flex-1 relative">
+        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">search</span>
+        <input id="searchInput" type="text" placeholder="Search conversations, messages, quotes…" autocomplete="off"
+          class="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/30" />
+      </div>
+    </div>
+    <!-- Search results -->
+    <div id="searchResults" class="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+      <div class="text-center text-sm text-slate-400 py-12">Type a keyword to search across conversations, messages, and quotes.</div>
+    </div>
+  </div>
+
+  <!-- ═══════ BOTTOM NAV ═══════ -->
+  <nav class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-primary/5 z-50">
+    <div class="px-6 py-3 flex items-center justify-between max-w-md mx-auto">
+      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-primary" data-page="pricing-dashboard">
+        <span class="material-symbols-outlined fill-[1]">dashboard</span>
+        <span class="text-[9px] font-bold uppercase tracking-tight">Pricing</span>
+      </a>
+      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-slate-400" data-page="management-dashboard">
+        <span class="material-symbols-outlined">admin_panel_settings</span>
+        <span class="text-[9px] font-bold uppercase tracking-tight">Management</span>
+      </a>
+      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-slate-400" data-page="teams">
+        <span class="material-symbols-outlined">group</span>
+        <span class="text-[9px] font-bold uppercase tracking-tight">Teams</span>
+      </a>
+      <a href="#" class="nav-tab flex flex-col items-center gap-1 text-slate-400" data-page="settings">
+        <span class="material-symbols-outlined">settings</span>
+        <span class="text-[9px] font-bold uppercase tracking-tight">Settings</span>
+      </a>
+    </div>
+  </nav>
+
+  <!-- ═══════ SHIFT SCHEDULE MODAL ═══════ -->
+  <div id="scheduleModal" class="fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm hidden items-center justify-center p-4">
+    <div class="bg-white dark:bg-slate-900 w-full max-w-md rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-bold text-slate-900 dark:text-white" id="scheduleModalTitle">Edit Schedule</h3>
+          <p class="text-xs text-slate-500" id="scheduleModalSubtitle">Select working days and hours</p>
+        </div>
+        <button id="closeScheduleModal" class="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+      <div class="p-5 flex-1 overflow-y-auto space-y-4">
+        <input type="hidden" id="scheduleTeammateId" />
+        
+        <div>
+          <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Timezone</label>
+          <select id="scheduleTimezone" class="w-full text-sm border border-slate-200 dark:border-slate-700 rounded-lg p-2.5 bg-white dark:bg-slate-800 text-slate-900 dark:text-white outline-none focus:border-primary">
+            <option value="America/Los_Angeles">Pacific Time (US & Canada)</option>
+            <option value="America/Denver">Mountain Time (US & Canada)</option>
+            <option value="America/Chicago">Central Time (US & Canada)</option>
+            <option value="America/New_York">Eastern Time (US & Canada)</option>
+            <option value="UTC">UTC</option>
+            <option value="Europe/London">London</option>
+            <option value="Asia/Manila">Manila</option>
+          </select>
+        </div>
+        
+        <div>
+          <div class="flex items-center justify-between mt-4 mb-2 pb-1 border-b border-slate-100 dark:border-slate-800">
+            <h4 class="text-xs font-bold text-slate-700 dark:text-slate-300">Working Days & Hours</h4>
+            <span class="text-[10px] text-slate-400">24-hour format (e.g. 09:00 - 17:00)</span>
+          </div>
+          <div class="space-y-3 mt-3" id="workingDaysContainer">
+            <!-- JS populates days -->
+          </div>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 bg-slate-50 dark:bg-slate-900/50">
+        <button id="cancelScheduleBtn" class="px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors">Cancel</button>
+        <button id="saveScheduleBtn" class="px-4 py-2 text-sm font-bold text-white bg-primary hover:bg-primary/90 rounded-lg flex items-center gap-2 transition-colors">
+          Save Changes
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Info popover (shared across all info-btn clicks) -->
+  <div id="infoPopover" class="hidden fixed z-[60] max-w-[280px] bg-slate-800 dark:bg-slate-900 text-white text-[11px] rounded-lg shadow-xl ring-1 ring-black/10 p-3 leading-relaxed">
+    <div class="flex items-start justify-between gap-2 mb-1">
+      <h3 id="infoPopoverTitle" class="text-[12px] font-bold"></h3>
+      <button id="infoPopoverClose" class="text-slate-400 hover:text-white leading-none -mt-0.5" aria-label="Close"><span class="material-symbols-outlined text-[16px]">close</span></button>
+    </div>
+    <div id="infoPopoverBody" class="text-slate-200 text-[11px] space-y-1.5"></div>
+  </div>
+
+  <!-- Firebase Auth SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+</body>
+</html>
