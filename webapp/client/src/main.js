@@ -2314,6 +2314,7 @@ function renderClsChips() {
   const empty = document.getElementById('clsChipsEmpty');
   const meta = document.getElementById('clsMeta');
   const saveBtn = document.getElementById('clsSaveBtn');
+  const clearBtn = document.getElementById('clsClearBtn');
   if (!wrap) return;
   ['direct', 'indirect'].forEach(t => {
     const cnt = document.querySelector(`[data-cls-count="${t}"]`);
@@ -2345,6 +2346,7 @@ function renderClsChips() {
     }
   }
   if (saveBtn) saveBtn.disabled = !clsState.dirty;
+  if (clearBtn) clearBtn.disabled = !clsCurrentList().length;
 }
 
 function setClsTab(tab) {
@@ -2471,6 +2473,16 @@ function initClassificationSettings() {
     e.target.value = '';
   });
   document.getElementById('clsSaveBtn')?.addEventListener('click', saveClsLists);
+  document.getElementById('clsClearBtn')?.addEventListener('click', () => {
+    showClsError('');
+    const tab = clsState.activeTab;
+    if (!clsState[tab].length) return;
+    const label = tab === 'direct' ? 'Direct' : 'Indirect';
+    if (!confirm(`Remove all ${clsState[tab].length} ${label} domain${clsState[tab].length === 1 ? '' : 's'}? You'll still need to click Save to persist this change.`)) return;
+    clsState[tab] = [];
+    clsState.dirty = true;
+    renderClsChips();
+  });
   setClsTab('direct');
 }
 initClassificationSettings();
