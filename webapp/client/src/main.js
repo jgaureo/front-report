@@ -152,6 +152,21 @@ document.querySelectorAll('.nav-tab').forEach(tab => {
   tab.addEventListener('click', e => { e.preventDefault(); navigateTo(tab.dataset.page); });
 });
 
+// ─── Management sub-tab toggle: Current Pipeline | Aging Pipeline ─
+function setMgmtSubTab(subPage) {
+  document.querySelectorAll('.mgmt-sub-tab').forEach(btn => {
+    const active = btn.dataset.subPage === subPage;
+    btn.className = `mgmt-sub-tab px-4 py-2 text-sm font-bold rounded-lg border border-primary/10 ${
+      active ? 'bg-primary text-white' : 'bg-white text-slate-500 hover:text-primary'
+    }`;
+  });
+  document.getElementById('current-pipeline-content')?.classList.toggle('hidden', subPage !== 'current-pipeline');
+  document.getElementById('aging-pipeline-content')?.classList.toggle('hidden', subPage !== 'aging-pipeline');
+}
+document.querySelectorAll('.mgmt-sub-tab').forEach(btn =>
+  btn.addEventListener('click', () => setMgmtSubTab(btn.dataset.subPage))
+);
+
 // ─── Helpers ─────────────────────────────────────────
 function avatarColor(name) {
   let h = 0;
@@ -1240,6 +1255,125 @@ function renderQuotedPotentialRevenue(data) {
   renderDealList('quotedPotentialRevenue', data, 'No deals in Quoted stage');
 }
 
+// ─── Render: QRN-Blank Tiles (Current Pipeline) ──────
+function renderQrnBlankTiles(data) {
+  const a = document.getElementById('qrnBlankSpam');
+  const b = document.getElementById('qrnBlankResolved');
+  if (a) a.textContent = (data?.blank_qrn_unresolved ?? 0).toLocaleString();
+  if (b) b.textContent = (data?.blank_qrn_resolved   ?? 0).toLocaleString();
+}
+
+// ─── Render: Aging Pipeline ──────────────────────────
+function renderAgingOpenTiles(data) {
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v ?? 0).toLocaleString(); };
+  set('agingOpen3',  data?.older_3);
+  set('agingOpen7',  data?.older_7);
+  set('agingOpen14', data?.older_14);
+  set('agingOpen30', data?.older_30);
+}
+
+function renderAgingOpenBuckets(data) {
+  const el = document.getElementById('agingOpenBuckets');
+  if (!el) return;
+  const buckets = [
+    { label: '0–3 days',   count: Number(data?.bucket_0_3    || 0) },
+    { label: '3–7 days',   count: Number(data?.bucket_3_7    || 0) },
+    { label: '7–14 days',  count: Number(data?.bucket_7_14   || 0) },
+    { label: '14–30 days', count: Number(data?.bucket_14_30  || 0) },
+    { label: '30+ days',   count: Number(data?.bucket_30_plus|| 0) },
+  ];
+  const total = buckets.reduce((s, b) => s + b.count, 0);
+  if (!total) { el.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No open conversations</div>'; return; }
+  const max = Math.max(...buckets.map(b => b.count), 1);
+  const colors = ['#73be4b', '#5B86AD', '#f59e0b', '#FB923C', '#f87171'];
+  el.innerHTML = `
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+          <th class="text-left font-semibold py-2">Age</th>
+          <th class="text-right font-semibold py-2">Count</th>
+          <th class="text-right font-semibold py-2 w-1/2">Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${buckets.map((b, i) => {
+          const pct = total ? (b.count / total) * 100 : 0;
+          const barW = (b.count / max) * 100;
+          return `<tr class="border-b border-slate-50 last:border-0">
+            <td class="py-2 font-semibold text-slate-700">${b.label}</td>
+            <td class="py-2 text-right font-bold text-slate-700">${b.count.toLocaleString()}</td>
+            <td class="py-2">
+              <div class="flex items-center gap-2 justify-end">
+                <div class="h-1.5 flex-1 max-w-[60%] bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${barW}%;background:${colors[i]}"></div></div>
+                <span class="text-[10px] font-semibold text-slate-500 w-10 text-right">${pct.toFixed(1)}%</span>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="pt-3 text-[10px] text-slate-400">Total open</td>
+          <td colspan="2" class="pt-3 text-right text-[10px] font-bold text-slate-600">${total.toLocaleString()}</td>
+        </tr>
+      </tfoot>
+    </table>`;
+}
+
+function renderAgingFollowups(noFollowup, noResponse) {
+  const f = document.getElementById('agingQuotedNoFollowup');
+  const r = document.getElementById('agingQuotedNoResponse');
+  if (f) f.textContent = (noFollowup?.count ?? 0).toLocaleString();
+  if (r) r.textContent = (noResponse?.count ?? 0).toLocaleString();
+}
+
+function renderAgingQuotedValue(data) {
+  const el = document.getElementById('agingQuotedValue');
+  if (!el) return;
+  const buckets = data?.buckets || [];
+  const total_value = Number(data?.total_value || 0);
+  const total_count = Number(data?.total_count || 0);
+  if (!total_count) { el.innerHTML = '<div class="text-xs text-slate-400 text-center py-4">No open quoted deals</div>'; return; }
+  const max = Math.max(...buckets.map(b => Number(b.value) || 0), 1);
+  const colors = ['#73be4b', '#5B86AD', '#f59e0b', '#FB923C', '#f87171'];
+  el.innerHTML = `
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="text-[10px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+          <th class="text-left font-semibold py-2">Age</th>
+          <th class="text-right font-semibold py-2">Deals</th>
+          <th class="text-right font-semibold py-2">Quoted Value</th>
+          <th class="text-right font-semibold py-2 w-1/3">Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${buckets.map((b, i) => {
+          const value = Number(b.value) || 0;
+          const count = Number(b.count) || 0;
+          const pct = total_value > 0 ? (value / total_value) * 100 : 0;
+          const barW = (value / max) * 100;
+          return `<tr class="border-b border-slate-50 last:border-0">
+            <td class="py-2 font-semibold text-slate-700">${b.label}</td>
+            <td class="py-2 text-right text-slate-500">${count.toLocaleString()}</td>
+            <td class="py-2 text-right font-bold text-slate-700">${fmtUSD(value)}</td>
+            <td class="py-2">
+              <div class="flex items-center gap-2 justify-end">
+                <div class="h-1.5 flex-1 max-w-[60%] bg-slate-100 rounded-full overflow-hidden"><div class="h-full rounded-full" style="width:${barW}%;background:${colors[i]}"></div></div>
+                <span class="text-[10px] font-semibold text-slate-500 w-10 text-right">${pct.toFixed(1)}%</span>
+              </div>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="pt-3 text-[10px] text-slate-400">${total_count} deal${total_count === 1 ? '' : 's'}</td>
+          <td colspan="3" class="pt-3 text-right text-[10px] font-bold text-slate-600">${fmtUSD(total_value)}</td>
+        </tr>
+      </tfoot>
+    </table>`;
+}
+
 function downloadCsvRows(rows, filename) {
   const csv = rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1808,6 +1942,84 @@ const CHART_INFO = {
       'Stage columns, %, and Win/Loss % use the same definitions as the Quote Stages by Rep widget (cumulative count + share of bucket total).',
     ],
   },
+  'blank-qrn-spam': {
+    title: 'Blank QRN — Assumed Spam',
+    body: [
+      'Conversations in the Sales Team inbox whose <b>QRN (Quote Request Number) was never assigned</b> and whose status is <b>not Resolved</b>.',
+      'A QRN is normally created when a request is parsed as a real quote opportunity. When it is never created and the conversation is still around, the lead is treated as <b>likely spam or non-actionable</b> — it never escalated into the quoting workflow.',
+      'Respects the dashboard date and source filters. Use this to spot how much inbound noise the Sales inbox is absorbing.',
+    ],
+  },
+  'blank-qrn-resolved': {
+    title: 'Blank QRN — Resolved',
+    body: [
+      'Conversations in the Sales Team inbox that were <b>marked Resolved</b> but had <b>no QRN ever assigned</b>.',
+      'These are conversations the team closed out without ever turning into a quote request — useful for spotting cases where a quote opportunity may have been dismissed, or where the inbox is being used for unrelated correspondence.',
+      'Respects the dashboard date and source filters.',
+    ],
+  },
+  'aging-open-3': {
+    title: 'Open Conversations > 3 Days',
+    body: [
+      'Conversations in the Sales Team inbox that are currently <b>open</b> (status = assigned or unassigned) and whose <code>created_at</code> is more than <b>3 days</b> ago.',
+      'This is a <b>live</b> snapshot — it <i>ignores</i> the dashboard date range so older conversations remain visible. The source filter still applies.',
+      'Threshold is cumulative: this tile includes everything older than 3 days, so it always ≥ the &gt; 7-day count.',
+    ],
+  },
+  'aging-open-7': {
+    title: 'Open Conversations > 7 Days',
+    body: [
+      'Open conversations in the Sales Team inbox whose <code>created_at</code> is more than <b>7 days</b> ago.',
+      'Live snapshot — ignores the dashboard date range. Source filter still applies.',
+      'Cumulative: includes everything older than 7 days (so always ≥ the &gt; 14-day count).',
+    ],
+  },
+  'aging-open-14': {
+    title: 'Open Conversations > 14 Days',
+    body: [
+      'Open conversations in the Sales Team inbox whose <code>created_at</code> is more than <b>14 days</b> ago.',
+      'Live snapshot — ignores the dashboard date range. Source filter still applies.',
+      'Cumulative: includes everything older than 14 days (so always ≥ the &gt; 30-day count).',
+    ],
+  },
+  'aging-open-30': {
+    title: 'Open Conversations > 30 Days',
+    body: [
+      'Open conversations in the Sales Team inbox whose <code>created_at</code> is more than <b>30 days</b> ago.',
+      'Live snapshot — ignores the dashboard date range. Source filter still applies.',
+      'These are the longest-stalled open items and the most urgent backlog to triage.',
+    ],
+  },
+  'aging-open-buckets': {
+    title: 'Open Conversations by Age',
+    body: [
+      'Distribution of currently-open conversations across <b>non-overlapping</b> age buckets: 0–3, 3–7, 7–14, 14–30, and 30+ days.',
+      'Live snapshot — ignores the dashboard date range. Source filter still applies.',
+      'The bucket counts here sum to the total open conversations in the Sales Team inbox right now.',
+    ],
+  },
+  'aging-no-followup': {
+    title: 'Quoted — No Follow-up 3+ Days',
+    body: [
+      'Open conversations carrying the <code>quoted</code> tag where the <b>latest outbound (team-sent) message</b> was 3 or more days ago — or where the team has never sent an outbound message at all.',
+      'Surface this to spot quoted deals that have gone quiet on our side. Live snapshot — ignores the dashboard date range; source filter applies.',
+    ],
+  },
+  'aging-no-response': {
+    title: 'Quoted — No Customer Response 7+ Days',
+    body: [
+      'Open conversations carrying the <code>quoted</code> tag where the <b>latest inbound (customer-sent) message</b> was 7 or more days ago — or where the customer has never replied at all.',
+      'Use this to spot stalled deals awaiting a customer decision. Live snapshot — ignores the dashboard date range; source filter applies.',
+    ],
+  },
+  'aging-quoted-value': {
+    title: 'Open Quoted Value by Age',
+    body: [
+      'Total dollar value of <b>open quoted deals</b> (conversations with the <code>quoted</code> tag and an attached QRN) grouped by how long the conversation has been around.',
+      'Value per QRN = <code>SUM(sell_amount)</code> on the latest <code>quote_pricing</code> row (matches the Quoted Potential Revenue widget).',
+      'Live snapshot — ignores the dashboard date range; source filter still applies. Helps see how much revenue is sitting in stale buckets.',
+    ],
+  },
 };
 
 (function initInfoPopover() {
@@ -2290,7 +2502,7 @@ async function loadAll() {
   showLoading();
   const q = qs();
   try {
-    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth, dirByMonth, activeConv, convPerOwner, revByCompany, needOnboard, quotedPotential, stagesByRep, stagesByBizType] = await Promise.all([
+    const [stats, trend, team, pending, accounts, schedules, mgmtKpis, winRate, freightBreakdown, wonByMonth, dirByMonth, activeConv, convPerOwner, revByCompany, needOnboard, quotedPotential, stagesByRep, stagesByBizType, qrnBlank, agingOpen, agingNoFollowup, agingNoResponse, agingQuotedValue] = await Promise.all([
       api(`/api/dashboard-stats?${q}`),
       api(`/api/conversation-trend?${q}`),
       api(`/api/team-performance?${q}`),
@@ -2309,6 +2521,11 @@ async function loadAll() {
       api(`/api/quoted-potential-revenue?${q}`).catch(() => null),
       api(`/api/quote-stages-by-rep?${q}`).catch(() => null),
       api(`/api/quote-stages-by-business-type?${q}`).catch(() => null),
+      api(`/api/management-qrn-blank-counts?${q}`).catch(() => null),
+      api(`/api/management-aging-open-conversations?${q}`).catch(() => null),
+      api(`/api/management-aging-quoted-no-followup?${q}`).catch(() => null),
+      api(`/api/management-aging-quoted-no-response?${q}`).catch(() => null),
+      api(`/api/management-aging-quoted-value?${q}`).catch(() => null),
     ]);
 
     teamSchedules = schedules || {};
@@ -2332,6 +2549,11 @@ async function loadAll() {
     renderQuotedPotentialRevenue(quotedPotential);
     renderQuoteStagesByRep(stagesByRep);
     renderQuoteStagesByBusinessType(stagesByBizType);
+    renderQrnBlankTiles(qrnBlank);
+    renderAgingOpenTiles(agingOpen);
+    renderAgingOpenBuckets(agingOpen);
+    renderAgingFollowups(agingNoFollowup, agingNoResponse);
+    renderAgingQuotedValue(agingQuotedValue);
   } catch (err) {
     console.error('Load error:', err);
   } finally {

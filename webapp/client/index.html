@@ -280,9 +280,40 @@
   <!-- ═══════ PAGE: MANAGEMENT DASHBOARD ═══════ -->
   <main id="page-management-dashboard" class="page p-4 space-y-6">
 
+    <!-- Sub-tab toggle: Current Pipeline | Aging Pipeline -->
+    <div class="flex gap-2" id="mgmtSubTabs">
+      <button class="mgmt-sub-tab px-4 py-2 text-sm font-bold rounded-lg border border-primary/10 bg-primary text-white" data-sub-page="current-pipeline">Current Pipeline</button>
+      <button class="mgmt-sub-tab px-4 py-2 text-sm font-bold rounded-lg border border-primary/10 bg-white text-slate-500 hover:text-primary" data-sub-page="aging-pipeline">Aging Pipeline</button>
+    </div>
+
+    <!-- ─── CURRENT PIPELINE ─────────────────────────────── -->
+    <div id="current-pipeline-content" class="space-y-6">
+
     <!-- KPI Cards (populated by renderManagementKPIs) -->
     <div class="grid grid-cols-2 md:grid-cols-5 gap-3" id="mgmtKpiCards">
       <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5 col-span-2 md:col-span-5 text-xs text-slate-400 text-center py-6">Loading…</div>
+    </div>
+
+    <!-- QRN-Blank tiles (second KPI row) -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="mgmtQrnTiles">
+      <!-- Tile 1: Blank QRN — Assumed Spam -->
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <div class="flex items-center gap-1.5 mb-1">
+          <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Blank QRN — Assumed Spam</h3>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="blank-qrn-spam" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+        </div>
+        <div id="qrnBlankSpam" class="text-3xl font-extrabold text-primary">–</div>
+        <div class="text-[10px] text-slate-400 mt-1">Conversations with no QRN ever assigned and not Resolved</div>
+      </div>
+      <!-- Tile 2: Blank QRN — Resolved -->
+      <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+        <div class="flex items-center gap-1.5 mb-1">
+          <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Blank QRN — Resolved</h3>
+          <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="blank-qrn-resolved" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+        </div>
+        <div id="qrnBlankResolved" class="text-3xl font-extrabold text-primary">–</div>
+        <div class="text-[10px] text-slate-400 mt-1">Conversations with no QRN ever assigned that were marked Resolved</div>
+      </div>
     </div>
 
     <!-- Win Rate Chart -->
@@ -505,6 +536,96 @@
         <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
       </div>
     </section>
+
+    </div><!-- /current-pipeline-content -->
+
+    <!-- ─── AGING PIPELINE ───────────────────────────────── -->
+    <div id="aging-pipeline-content" class="space-y-6 hidden">
+
+      <!-- Row 1: Open conversation age threshold tiles -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3" id="agingOpenTiles">
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Open &gt; 3 days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-3" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingOpen3" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open conversations older than 3 days</div>
+        </div>
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Open &gt; 7 days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-7" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingOpen7" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open conversations older than 7 days</div>
+        </div>
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Open &gt; 14 days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-14" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingOpen14" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open conversations older than 14 days</div>
+        </div>
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Open &gt; 30 days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-30" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingOpen30" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open conversations older than 30 days</div>
+        </div>
+      </div>
+
+      <!-- Row 2: Open Conversations by Age (bar chart) -->
+      <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div class="flex items-center gap-1.5">
+            <h2 class="text-sm font-bold text-primary">Open Conversations by Age</h2>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-open-buckets" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+          </div>
+        </div>
+        <div class="p-4" id="agingOpenBuckets">
+          <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+        </div>
+      </section>
+
+      <!-- Row 3: Follow-up tiles -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Quoted — No Follow-up 3+ days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-no-followup" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingQuotedNoFollowup" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open quoted deals where the last outbound message is 3 or more days old</div>
+        </div>
+        <div class="bg-white dark:bg-background-dark/50 p-4 rounded-xl shadow-sm border border-primary/5">
+          <div class="flex items-center gap-1.5 mb-1">
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-widest">Quoted — No Customer Response 7+ days</h3>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-no-response" aria-label="About this metric"><span class="material-symbols-outlined text-[14px] align-middle">info</span></button>
+          </div>
+          <div id="agingQuotedNoResponse" class="text-3xl font-extrabold text-primary">–</div>
+          <div class="text-[10px] text-slate-400 mt-1">Open quoted deals where the last inbound message is 7 or more days old</div>
+        </div>
+      </div>
+
+      <!-- Row 4: Open Quoted Value by Age (bar chart) -->
+      <section class="bg-white dark:bg-background-dark/50 rounded-xl shadow-sm border border-primary/5 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div class="flex items-center gap-1.5">
+            <h2 class="text-sm font-bold text-primary">Open Quoted Value by Age</h2>
+            <button class="info-btn text-slate-400 hover:text-primary transition-colors leading-none" data-info-key="aging-quoted-value" aria-label="About this chart"><span class="material-symbols-outlined text-[16px] align-middle">info</span></button>
+          </div>
+        </div>
+        <div class="p-4" id="agingQuotedValue">
+          <div class="text-xs text-slate-400 text-center py-4">Loading…</div>
+        </div>
+      </section>
+
+    </div><!-- /aging-pipeline-content -->
+
   </main>
 
   <!-- ═══════ PAGE: TEAMS ═══════ -->

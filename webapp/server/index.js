@@ -1080,6 +1080,39 @@ app.get('/api/management-no-qrn-won', async (req, res) => {
   }
 });
 
+// ─── 10b. Management QRN-Blank Counts (Current Pipeline) ─
+// Two counts: conversations in the Sales inbox whose QRN was never assigned,
+// split by whether they're Resolved or not. Honors date + source + classification.
+app.get('/api/management-qrn-blank-counts', async (req, res) => {
+  try {
+    const { startStr, endStr } = dateParams(req);
+    const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const sql = `
+      SELECT
+        COUNT(DISTINCT CASE WHEN COALESCE(c.status_category,'') != 'resolved' THEN c.id END) AS blank_qrn_unresolved,
+        COUNT(DISTINCT CASE WHEN c.status_category = 'resolved'              THEN c.id END) AS blank_qrn_resolved
+      FROM \`${FRONT}.conversation\` c
+      ${SALES_INBOX_FILTER}
+      LEFT JOIN \`${AI}.email_quote_requests\` q
+        ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+      WHERE c.created_at >= TIMESTAMP(@start) AND c.created_at <= TIMESTAMP(@end)
+        ${typeClause} ${classClause}
+        AND q.quote_request_number IS NULL
+    `;
+    const rows = await runQuery(sql, { start: startStr, end: endStr });
+    const r = rows[0] || {};
+    res.json({
+      blank_qrn_unresolved: Number(r.blank_qrn_unresolved || 0),
+      blank_qrn_resolved:   Number(r.blank_qrn_resolved   || 0),
+    });
+  } catch (err) {
+    console.error('management-qrn-blank-counts error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── 10. Management Won Conversations by Direction ───────
 app.get('/api/management-won-by-month', async (req, res) => {
   try {
@@ -1973,6 +2006,198 @@ app.get('/api/quote-stages-by-business-type', async (req, res) => {
     res.json({ rows, pipeline: PIPELINE_STAGES, side: SIDE_STAGES, deals: dealRows });
   } catch (err) {
     console.error('quote-stages-by-business-type error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ════════════════════════════════════════════════════════
+// AGING PIPELINE ENDPOINTS
+// Live "as of now" metrics. Source + classification filters apply;
+// the date-range filter is intentionally ignored so older items
+// remain visible.
+// ════════════════════════════════════════════════════════
+
+// ─── A1. Open Conversations by Age ───────────────────────
+app.get('/api/management-aging-open-conversations', async (req, res) => {
+  try {
+    const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const sql = `
+      WITH base AS (
+        SELECT DISTINCT c.id, c.created_at,
+          TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), c.created_at, DAY) AS days_old
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        WHERE c.status IN ('assigned','unassigned')
+          ${typeClause} ${classClause}
+      )
+      SELECT
+        COUNT(*) AS total_open,
+        COUNTIF(days_old >  3) AS older_3,
+        COUNTIF(days_old >  7) AS older_7,
+        COUNTIF(days_old > 14) AS older_14,
+        COUNTIF(days_old > 30) AS older_30,
+        COUNTIF(days_old <=  3)                       AS bucket_0_3,
+        COUNTIF(days_old >  3 AND days_old <=  7)     AS bucket_3_7,
+        COUNTIF(days_old >  7 AND days_old <= 14)     AS bucket_7_14,
+        COUNTIF(days_old > 14 AND days_old <= 30)     AS bucket_14_30,
+        COUNTIF(days_old > 30)                        AS bucket_30_plus
+      FROM base
+    `;
+    const rows = await runQuery(sql);
+    const r = rows[0] || {};
+    res.json({
+      total_open:    Number(r.total_open    || 0),
+      older_3:       Number(r.older_3       || 0),
+      older_7:       Number(r.older_7       || 0),
+      older_14:      Number(r.older_14      || 0),
+      older_30:      Number(r.older_30      || 0),
+      bucket_0_3:    Number(r.bucket_0_3    || 0),
+      bucket_3_7:    Number(r.bucket_3_7    || 0),
+      bucket_7_14:   Number(r.bucket_7_14   || 0),
+      bucket_14_30:  Number(r.bucket_14_30  || 0),
+      bucket_30_plus:Number(r.bucket_30_plus|| 0),
+    });
+  } catch (err) {
+    console.error('management-aging-open-conversations error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── A2. Quoted Open Deals — No Follow-up in 3+ Days ─────
+app.get('/api/management-aging-quoted-no-followup', async (req, res) => {
+  try {
+    const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const sql = `
+      WITH quoted_open AS (
+        SELECT DISTINCT c.id
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'quoted'
+        WHERE c.status IN ('assigned','unassigned') ${typeClause} ${classClause}
+      ),
+      last_out AS (
+        SELECT m.conversation_id, MAX(m.created_at) AS last_out_at
+        FROM \`${FRONT}.message\` m
+        WHERE m.is_inbound = FALSE
+        GROUP BY m.conversation_id
+      )
+      SELECT COUNT(*) AS count
+      FROM quoted_open q
+      LEFT JOIN last_out lo ON lo.conversation_id = q.id
+      WHERE lo.last_out_at IS NULL
+         OR TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), lo.last_out_at, DAY) >= 3
+    `;
+    const rows = await runQuery(sql);
+    res.json({ count: Number(rows[0]?.count || 0) });
+  } catch (err) {
+    console.error('management-aging-quoted-no-followup error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── A3. Quoted Open Deals — No Customer Response in 7+ Days ──
+app.get('/api/management-aging-quoted-no-response', async (req, res) => {
+  try {
+    const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const sql = `
+      WITH quoted_open AS (
+        SELECT DISTINCT c.id
+        FROM \`${FRONT}.conversation\` c
+        ${SALES_INBOX_FILTER}
+        INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+        INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'quoted'
+        WHERE c.status IN ('assigned','unassigned') ${typeClause} ${classClause}
+      ),
+      last_in AS (
+        SELECT m.conversation_id, MAX(m.created_at) AS last_in_at
+        FROM \`${FRONT}.message\` m
+        WHERE m.is_inbound = TRUE
+        GROUP BY m.conversation_id
+      )
+      SELECT COUNT(*) AS count
+      FROM quoted_open q
+      LEFT JOIN last_in li ON li.conversation_id = q.id
+      WHERE li.last_in_at IS NULL
+         OR TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), li.last_in_at, DAY) >= 7
+    `;
+    const rows = await runQuery(sql);
+    res.json({ count: Number(rows[0]?.count || 0) });
+  } catch (err) {
+    console.error('management-aging-quoted-no-response error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── A4. Open Quoted Value by Age Bucket ─────────────────
+// 1. BQ: list of open `quoted`-tagged conversations with their QRN + days_old
+// 2. Postgres: latest pricing per QRN (reuses fetchPostgresDeals)
+// 3. Server joins by QRN, buckets by days_old, sums sell_amount per bucket
+app.get('/api/management-aging-quoted-value', async (req, res) => {
+  try {
+    const typeClause = typeFilterClause(req);
+    const classLists = await loadClassificationLists();
+    const classClause = classificationFilterClause(req, classLists);
+    const bqSql = `
+      SELECT
+        q.quote_request_number AS qrn,
+        TIMESTAMP_DIFF(CURRENT_TIMESTAMP(), c.created_at, DAY) AS days_old
+      FROM \`${FRONT}.conversation\` c
+      ${SALES_INBOX_FILTER}
+      INNER JOIN \`${FRONT}.conversation_tag\` ct ON ct.conversation_id = c.id
+      INNER JOIN \`${FRONT}.tag\` t ON t.id = ct.tag_id AND LOWER(t.name) = 'quoted'
+      INNER JOIN \`${AI}.email_quote_requests\` q
+        ON q.front_conversation_id = c.id AND q.quote_request_number IS NOT NULL
+      WHERE c.status IN ('assigned','unassigned') ${typeClause} ${classClause}
+      GROUP BY qrn, days_old
+    `;
+    const bqRows = await runQuery(bqSql);
+
+    const buckets = [
+      { label: '0–3 days',  min: -Infinity, max: 3,        value: 0, count: 0 },
+      { label: '3–7 days',  min: 3,         max: 7,        value: 0, count: 0 },
+      { label: '7–14 days', min: 7,         max: 14,       value: 0, count: 0 },
+      { label: '14–30 days',min: 14,        max: 30,       value: 0, count: 0 },
+      { label: '30+ days',  min: 30,        max: Infinity, value: 0, count: 0 },
+    ];
+
+    if (!bqRows.length) {
+      return res.json({ buckets, total_value: 0, total_count: 0 });
+    }
+
+    // Older convs are more likely to have updated quote values, but a QRN may
+    // appear on multiple conversation_ids — keep the oldest days_old per QRN.
+    const qrnAge = new Map();
+    for (const r of bqRows) {
+      const days = Number(r.days_old);
+      const prev = qrnAge.get(r.qrn);
+      if (prev === undefined || days > prev) qrnAge.set(r.qrn, days);
+    }
+
+    const pgRows = await fetchPostgresDeals([...qrnAge.keys()]);
+    const valueByQrn = new Map(pgRows.map(p => [p.qrn, p.quoted_value]));
+
+    let total_value = 0, total_count = 0;
+    for (const [qrn, days] of qrnAge) {
+      const value = valueByQrn.get(qrn) || 0;
+      const b = buckets.find(b => days > b.min && days <= b.max);
+      if (b) {
+        b.value += value;
+        b.count += 1;
+      }
+      total_value += value;
+      total_count += 1;
+    }
+
+    res.json({ buckets, total_value, total_count });
+  } catch (err) {
+    console.error('management-aging-quoted-value error:', err);
     res.status(500).json({ error: err.message });
   }
 });
